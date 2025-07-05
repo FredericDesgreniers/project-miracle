@@ -339,7 +339,7 @@ export class Game {
     // Load grass texture from image
     try {
       console.log('Loading grass texture from image...');
-      const grassTexture = await Texture.load(gl, '/src/images/grass.png');
+      const grassTexture = await Texture.load(gl, '/images/grass.png');
       this.textures.set('grass', grassTexture);
       console.log('Grass texture loaded successfully');
     } catch (error) {
@@ -350,7 +350,7 @@ export class Game {
     // Load dirt texture from image
     try {
       console.log('Loading dirt texture from image...');
-      const dirtTexture = await Texture.load(gl, '/src/images/dirt-1.png');
+      const dirtTexture = await Texture.load(gl, '/images/dirt-1.png');
       this.textures.set('dirt', dirtTexture);
       console.log('Dirt texture loaded successfully');
     } catch (error) {
@@ -361,7 +361,7 @@ export class Game {
     // Load stone texture from image
     try {
       console.log('Loading stone texture from image...');
-      const stoneTexture = await Texture.load(gl, '/src/images/stone-1.png');
+      const stoneTexture = await Texture.load(gl, '/images/stone-1.png');
       this.textures.set('stone', stoneTexture);
       console.log('Stone texture loaded successfully');
     } catch (error) {
@@ -372,7 +372,7 @@ export class Game {
     // Load water texture from image
     try {
       console.log('Loading water texture from image...');
-      const waterTexture = await Texture.load(gl, '/src/images/water-1.png');
+      const waterTexture = await Texture.load(gl, '/images/water-1.png');
       this.textures.set('water', waterTexture);
       console.log('Water texture loaded successfully');
     } catch (error) {
@@ -400,7 +400,7 @@ export class Game {
     // Load wood/log texture from image
     try {
       console.log('Loading wood texture from image...');
-      const woodTexture = await Texture.load(gl, '/src/images/log-1.png');
+      const woodTexture = await Texture.load(gl, '/images/log-1.png');
       this.textures.set('item_wood', woodTexture);
       console.log('Wood texture loaded successfully');
     } catch (error) {
@@ -412,7 +412,7 @@ export class Game {
     const treePromises = [];
     for (let i = 1; i <= 4; i++) {
       treePromises.push(
-        Texture.load(gl, `/src/images/tree-${i}.png`)
+        Texture.load(gl, `/images/tree-${i}.png`)
           .then(texture => {
             this.textures.set(`tree-${i}`, texture);
             console.log(`Tree texture ${i} loaded successfully`);
@@ -433,7 +433,7 @@ export class Game {
     // Load character sprite sheet
     try {
       console.log('Loading character sprite sheet...');
-      const characterTexture = await Texture.load(gl, '/src/images/character.png');
+      const characterTexture = await Texture.load(gl, '/images/character.png');
       this.textures.set('character', characterTexture);
       console.log('Character sprite sheet loaded successfully');
     } catch (error) {
@@ -443,7 +443,7 @@ export class Game {
     // Load shopkeeper texture from image
     try {
       console.log('Loading shopkeeper texture from image...');
-      const shopkeeperTexture = await Texture.load(gl, '/src/images/shopkeeper-1.png');
+      const shopkeeperTexture = await Texture.load(gl, '/images/shopkeeper-1.png');
       this.textures.set('shopkeeper', shopkeeperTexture);
       console.log('Shopkeeper texture loaded successfully');
     } catch (error) {
@@ -455,7 +455,7 @@ export class Game {
     // Load blacksmith texture from image
     try {
       console.log('Loading blacksmith texture from image...');
-      const blacksmithTexture = await Texture.load(gl, '/src/images/blacksmithguy-1.png');
+      const blacksmithTexture = await Texture.load(gl, '/images/blacksmithguy-1.png');
       this.textures.set('blacksmith', blacksmithTexture);
       console.log('Blacksmith texture loaded successfully');
     } catch (error) {
@@ -467,7 +467,7 @@ export class Game {
     // Load shop stall texture from image
     try {
       console.log('Loading shop texture from image...');
-      const shopTexture = await Texture.load(gl, '/src/images/shop-1.png');
+      const shopTexture = await Texture.load(gl, '/images/shop-1.png');
       this.textures.set('shop_stall', shopTexture);
       console.log('Shop texture loaded successfully');
     } catch (error) {
@@ -478,7 +478,7 @@ export class Game {
     // Load blacksmith forge texture from image
     try {
       console.log('Loading blacksmith forge texture from image...');
-      const forgeTexture = await Texture.load(gl, '/src/images/blacksmith-1.png');
+      const forgeTexture = await Texture.load(gl, '/images/blacksmith-1.png');
       this.textures.set('forge', forgeTexture);
       console.log('Blacksmith forge texture loaded successfully');
     } catch (error) {
@@ -1643,7 +1643,7 @@ export class Game {
         shopElement.innerHTML = `
           <div style="display: flex; gap: 30px; align-items: flex-start;">
             <div>
-              <img src="/src/images/shopkeeper-1.png" style="width: 256px; height: 256px; image-rendering: pixelated; border: 3px solid #FFD700; border-radius: 8px; object-fit: cover;">
+              <img src="/images/shopkeeper-1.png" style="width: 256px; height: 256px; image-rendering: pixelated; border: 3px solid #FFD700; border-radius: 8px; object-fit: cover;">
               <p style="margin-top: 10px; font-style: italic;">"Welcome to my shop!"</p>
             </div>
             <div class="shop-content" style="min-width: 250px;">
@@ -1746,7 +1746,7 @@ export class Game {
         blacksmithElement.innerHTML = `
           <div style="display: flex; gap: 30px; align-items: flex-start;">
             <div>
-              <img src="/src/images/blacksmithguy-1.png" style="width: 256px; height: 256px; image-rendering: pixelated; border: 3px solid #8B4513; border-radius: 8px; object-fit: cover;">
+              <img src="/images/blacksmithguy-1.png" style="width: 256px; height: 256px; image-rendering: pixelated; border: 3px solid #8B4513; border-radius: 8px; object-fit: cover;">
               <p style="margin-top: 10px; font-style: italic;">"Need some fine metalwork?"</p>
             </div>
             <div class="blacksmith-content" style="min-width: 300px;">
