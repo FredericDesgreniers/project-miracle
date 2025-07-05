@@ -2,12 +2,22 @@ export class AudioSystem {
   private audioContext: AudioContext;
   private masterGain: GainNode;
   private sounds: Map<string, AudioBuffer> = new Map();
+  private musicGain: GainNode;
+  private currentMusic: AudioBufferSourceNode | null = null;
+  private musicBuffer: AudioBuffer | null = null;
+  private musicStatus: string = 'Not loaded';
+  private musicPlaying: boolean = false;
   
   constructor() {
     this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
     this.masterGain = this.audioContext.createGain();
     this.masterGain.gain.value = 0.3; // Master volume
     this.masterGain.connect(this.audioContext.destination);
+    
+    // Create a separate gain node for music
+    this.musicGain = this.audioContext.createGain();
+    this.musicGain.gain.value = 0.2; // Lower volume for background music
+    this.musicGain.connect(this.masterGain);
     
     this.generateSounds();
   }
@@ -272,5 +282,71 @@ export class AudioSystem {
   
   public setMasterVolume(volume: number): void {
     this.masterGain.gain.value = Math.max(0, Math.min(1, volume));
+  }
+  
+  public async loadMusic(url: string): Promise<void> {
+    try {
+      this.musicStatus = 'Loading...';
+      const response = await fetch(url);
+      const arrayBuffer = await response.arrayBuffer();
+      this.musicBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+      this.musicStatus = 'Loaded (Click to play)';
+      console.log('Music loaded successfully');
+    } catch (error) {
+      this.musicStatus = 'Load failed: ' + error;
+      console.error('Failed to load music:', error);
+    }
+  }
+  
+  public playMusic(loop: boolean = true): void {
+    if (!this.musicBuffer) {
+      console.warn('No music loaded');
+      this.musicStatus = 'No music buffer';
+      return;
+    }
+    
+    // Stop current music if playing
+    this.stopMusic();
+    
+    // Resume audio context if suspended
+    if (this.audioContext.state === 'suspended') {
+      this.audioContext.resume();
+    }
+    
+    // Create new source
+    this.currentMusic = this.audioContext.createBufferSource();
+    this.currentMusic.buffer = this.musicBuffer;
+    this.currentMusic.loop = loop;
+    
+    // Connect to music gain
+    this.currentMusic.connect(this.musicGain);
+    
+    // Start playing
+    this.currentMusic.start();
+    this.musicPlaying = true;
+    this.musicStatus = 'Playing';
+    console.log('Music started playing');
+  }
+  
+  public stopMusic(): void {
+    if (this.currentMusic) {
+      this.currentMusic.stop();
+      this.currentMusic.disconnect();
+      this.currentMusic = null;
+      this.musicPlaying = false;
+      this.musicStatus = 'Stopped';
+    }
+  }
+  
+  public getMusicStatus(): string {
+    return this.musicStatus;
+  }
+  
+  public getAudioContextState(): string {
+    return this.audioContext.state;
+  }
+  
+  public setMusicVolume(volume: number): void {
+    this.musicGain.gain.value = Math.max(0, Math.min(1, volume));
   }
 }

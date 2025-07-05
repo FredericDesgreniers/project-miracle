@@ -93,6 +93,7 @@ export class Game {
     
     this.loadAssets();
     this.setupEventListeners();
+    this.loadAndPlayMusic();
   }
   
   private setupCanvas(): void {
@@ -106,6 +107,46 @@ export class Game {
       this.renderer.resize(this.canvas.width, this.canvas.height);
       this.camera.resize(this.canvas.width, this.canvas.height);
     });
+    
+    // Setup volume control
+    const volumeSlider = document.getElementById('musicVolume') as HTMLInputElement;
+    const volumeValue = document.getElementById('volumeValue');
+    
+    if (volumeSlider && volumeValue) {
+      volumeSlider.addEventListener('input', (e) => {
+        const value = parseInt((e.target as HTMLInputElement).value);
+        const volume = value / 100;
+        this.audioSystem.setMusicVolume(volume);
+        volumeValue.textContent = `${value}%`;
+      });
+      
+      // Set initial volume
+      const initialVolume = parseInt(volumeSlider.value) / 100;
+      this.audioSystem.setMusicVolume(initialVolume);
+    }
+  }
+  
+  private async loadAndPlayMusic(): Promise<void> {
+    // Load and play background music
+    try {
+      await this.audioSystem.loadMusic('./src/sound/Harvest Glow.wav');
+      
+      // Start playing music after a user interaction to comply with browser autoplay policies
+      const startMusic = () => {
+        this.audioSystem.playMusic(true); // Loop the music
+        // Remove the listener after first interaction
+        window.removeEventListener('click', startMusic);
+        window.removeEventListener('keydown', startMusic);
+      };
+      
+      // Add listeners for user interaction (on window to catch any click)
+      window.addEventListener('click', startMusic);
+      window.addEventListener('keydown', startMusic);
+      
+      console.log('Music load initiated, waiting for user interaction...');
+    } catch (error) {
+      console.error('Failed to load music:', error);
+    }
   }
   
   private loadAssets(): void {
@@ -1012,6 +1053,7 @@ export class Game {
           });
           console.log('Bought 5 seeds for 10 coins!');
           this.audioSystem.playSound('purchase', 0.6);
+          this.inventoryUI.updateHotbar();
         }
       }
       // Sell carrots with 2
@@ -1020,6 +1062,7 @@ export class Game {
           this.player.addMoney(15);
           console.log('Sold 1 carrot for 15 coins!');
           this.audioSystem.playSound('coin', 0.5);
+          this.inventoryUI.updateHotbar();
         }
       }
       // Skip tool selection while shop is open
@@ -1460,6 +1503,14 @@ export class Game {
       const fpsElement = document.getElementById('fps');
       if (fpsElement) {
         fpsElement.textContent = this.frameCount.toString();
+      }
+      
+      // Update soundtrack status
+      const soundtrackElement = document.getElementById('soundtrack');
+      if (soundtrackElement) {
+        const musicStatus = this.audioSystem.getMusicStatus();
+        const contextState = this.audioSystem.getAudioContextState();
+        soundtrackElement.textContent = `${musicStatus} (Context: ${contextState})`;
       }
       
       this.frameCount = 0;
