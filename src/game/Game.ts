@@ -310,7 +310,7 @@ export class Game {
   private async loadAndPlayMusic(): Promise<void> {
     // Load and play background music
     try {
-      await this.audioSystem.loadMusic('./src/sound/Harvest Glow.wav');
+      await this.audioSystem.loadMusic('/sound/Harvest Glow.wav');
       
       // Start playing music after a user interaction to comply with browser autoplay policies
       const startMusic = () => {
