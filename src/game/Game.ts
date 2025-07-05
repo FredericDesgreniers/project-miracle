@@ -475,8 +475,16 @@ export class Game {
       this.textures.set('shop_stall', this.generateShopStallTexture());
     }
     
-    // Generate forge texture (no image available)
-    this.textures.set('forge', this.generateForgeTexture());
+    // Load blacksmith forge texture from image
+    try {
+      console.log('Loading blacksmith forge texture from image...');
+      const forgeTexture = await Texture.load(gl, '/src/images/blacksmith-1.png');
+      this.textures.set('forge', forgeTexture);
+      console.log('Blacksmith forge texture loaded successfully');
+    } catch (error) {
+      console.error('Failed to load blacksmith-1.png, using procedural texture:', error);
+      this.textures.set('forge', this.generateForgeTexture());
+    }
   }
   
   private generatePlayerTexture(facing: string = 'down', toolType?: ToolType, animProgress: number = 0): Texture {
@@ -2208,7 +2216,8 @@ export class Game {
     if (forgeTexture) {
       this.spriteBatch.flush();
       forgeTexture.bind(0);
-      this.spriteBatch.drawTexturedQuad(blacksmithPos.x, blacksmithPos.y - 16, 64, 48);
+      // Render the forge building behind and slightly offset from the blacksmith
+      this.spriteBatch.drawTexturedQuad(blacksmithPos.x, blacksmithPos.y - 24, 80, 80);
       this.spriteBatch.flush();
     }
   }
