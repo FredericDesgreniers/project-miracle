@@ -134,21 +134,8 @@ export class Player {
         
       case ToolType.Seeds:
       case 'seeds':
-        const canPlant = tileMap.plantSeed(targetX, targetY);
-        if (canPlant) {
-          if (!this.inventory.consumeSeed()) {
-            // Revert the planting since we don't have seeds
-            const tileX = Math.floor(targetX / 32);
-            const tileY = Math.floor(targetY / 32);
-            const tile = tileMap.getTileAt(tileX, tileY);
-            if (tile) {
-              tile.type = TileType.TilledDirt;
-              tile.planted = false;
-              tile.growth = undefined;
-            }
-          } else {
-            audioSystem?.playSound('plant', 0.4);
-          }
+        if (tileMap.plantSeed(targetX, targetY)) {
+          audioSystem?.playSound('plant', 0.4);
         }
         break;
         
@@ -203,21 +190,8 @@ export class Player {
         
       case ToolType.Seeds:
       case 'seeds':
-        const canPlant = tileMap.plantSeed(worldX, worldY);
-        if (canPlant) {
-          if (!this.inventory.consumeSeed()) {
-            // Revert the planting since we don't have seeds
-            const tileX = Math.floor(worldX / 32);
-            const tileY = Math.floor(worldY / 32);
-            const tile = tileMap.getTileAt(tileX, tileY);
-            if (tile) {
-              tile.type = TileType.TilledDirt;
-              tile.planted = false;
-              tile.growth = undefined;
-            }
-          } else {
-            audioSystem?.playSound('plant', 0.4);
-          }
+        if (tileMap.plantSeed(worldX, worldY)) {
+          audioSystem?.playSound('plant', 0.4);
         }
         break;
         

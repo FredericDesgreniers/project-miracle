@@ -88,8 +88,8 @@ export class InventorySystem {
       toolType: 'scythe'
     };
     
-    // Add seeds to inventory grid (first slot)
-    this.grid[0][0].item = {
+    // Add seeds to hotbar for easy access
+    this.hotbar[4].item = {
       id: 'carrot_seeds',
       name: 'Carrot Seeds',
       icon: '🥕',

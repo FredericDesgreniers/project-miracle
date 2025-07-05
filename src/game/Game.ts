@@ -16,6 +16,10 @@ import { Mat4 } from '../utils/math';
 import { AudioSystem } from '../engine/AudioSystem';
 import { InventorySystem } from './InventorySystem';
 import { InventoryUI } from './InventoryUI';
+import { ActionSystem } from './ActionSystem';
+import { InteractableNPC } from './InteractableNPC';
+import { InteractableTile } from './InteractableTile';
+import { TileActionRenderer, TileAction } from './TileActionRenderer';
 
 export class Game {
   private canvas: HTMLCanvasElement;
@@ -45,6 +49,9 @@ export class Game {
   private footstepInterval: number = 0.3; // Time between footsteps
   private inventorySystem: InventorySystem;
   private inventoryUI: InventoryUI;
+  private actionSystem: ActionSystem;
+  private tileActionRenderer: TileActionRenderer;
+  private currentTileActions: TileAction[] = [];
   
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -77,6 +84,12 @@ export class Game {
     this.audioSystem = new AudioSystem();
     this.inventorySystem = new InventorySystem();
     this.inventoryUI = new InventoryUI(this.inventorySystem);
+    this.actionSystem = new ActionSystem();
+    this.tileActionRenderer = new TileActionRenderer(this.renderer);
+    
+    // Register shopkeeper as interactable
+    const interactableShopkeeper = new InteractableNPC(this.shopkeeper, this, this.shop);
+    this.actionSystem.registerInteractable('shopkeeper', interactableShopkeeper);
     
     this.loadAssets();
     this.setupEventListeners();
@@ -762,7 +775,7 @@ export class Game {
     const dx = (tileX * tileSize + tileSize/2) - playerPos.x;
     const dy = (tileY * tileSize + tileSize/2) - playerPos.y;
     const distSq = dx * dx + dy * dy;
-    const reachDistance = 48; // 1.5 tiles
+    const reachDistance = 64; // 2 tiles
     
     if (distSq < reachDistance * reachDistance && !this.shop.isShopOpen()) {
       this.hoveredTile = new Vec2(tileX, tileY);
@@ -785,6 +798,61 @@ export class Game {
       }
     } else {
       this.lastFootstepTime = this.footstepInterval; // Reset so next step plays immediately
+    }
+    
+    // Clear current tile actions
+    this.currentTileActions = [];
+    
+    // Check for NPC interactions
+    if (this.shopkeeper.isNearPlayer(this.player.getPosition())) {
+      const npcWorldPos = this.shopkeeper.position;
+      this.currentTileActions.push({
+        position: new Vec2(npcWorldPos.x, npcWorldPos.y - 16),
+        key: 'E'
+      });
+      this.currentTileActions.push({
+        position: new Vec2(npcWorldPos.x, npcWorldPos.y),
+        key: 'F'
+      });
+    }
+    
+    // Check for tile interactions at mouse position
+    if (this.hoveredTile) {
+      const tile = this.tileMap.getTileAt(this.hoveredTile.x, this.hoveredTile.y);
+      const selectedItem = this.inventorySystem.getSelectedHotbarItem();
+      
+      if (tile && selectedItem && selectedItem.toolType) {
+        const worldX = this.hoveredTile.x * 32 + 16;
+        const worldY = this.hoveredTile.y * 32 + 16;
+        
+        // Check what action is available
+        let showAction = false;
+        
+        switch (tile.type) {
+          case TileType.Grass:
+          case TileType.Dirt:
+            if (selectedItem.toolType === 'hoe') showAction = true;
+            break;
+          case TileType.TilledDirt:
+            if (!tile.planted && selectedItem.toolType === 'seeds') showAction = true;
+            else if (selectedItem.toolType === 'wateringCan') showAction = true;
+            break;
+          case TileType.PlantedDirt:
+            if (selectedItem.toolType === 'wateringCan' && !tile.watered) showAction = true;
+            else if (selectedItem.toolType === 'scythe' && tile.growth && tile.growth >= 1.0) showAction = true;
+            break;
+          case TileType.Tree:
+            if (selectedItem.toolType === 'axe') showAction = true;
+            break;
+        }
+        
+        if (showAction) {
+          this.currentTileActions.push({
+            position: new Vec2(worldX, worldY),
+            key: 'C'
+          });
+        }
+      }
     }
     
     // Handle escape key to close menus
@@ -810,13 +878,32 @@ export class Game {
       }
     }
     
-    // Handle inventory toggle
-    if (this.input.isKeyPressed('KeyE')) {
-      this.inventorySystem.toggleInventory();
-      if (this.inventorySystem.isInventoryOpen()) {
-        this.inventoryUI.showInventory();
+    // Handle E key - check NPC interaction first, then inventory
+    if (this.input.isKeyPressed(Keys.E)) {
+      if (this.shopkeeper.isNearPlayer(this.player.getPosition())) {
+        // Show dialogue
+        console.log(`${this.shopkeeper.name}: ${this.shopkeeper.dialogue[0]}`);
       } else {
-        this.inventoryUI.hideInventory();
+        // Toggle inventory
+        this.inventorySystem.toggleInventory();
+        if (this.inventorySystem.isInventoryOpen()) {
+          this.inventoryUI.showInventory();
+        } else {
+          this.inventoryUI.hideInventory();
+        }
+      }
+    }
+    
+    // Handle F key for shop
+    if (this.input.isKeyPressed(Keys.F)) {
+      if (this.shopkeeper.isNearPlayer(this.player.getPosition())) {
+        if (this.shop.isShopOpen()) {
+          this.shop.close();
+          this.audioSystem.playSound('uiClose', 0.5);
+        } else {
+          this.shop.open();
+          this.audioSystem.playSound('uiOpen', 0.5);
+        }
       }
     }
     
@@ -898,20 +985,9 @@ export class Game {
     // Check for item pickups
     this.player.collectItems(this.itemDropManager, this.audioSystem, this.inventorySystem);
     
-    // Handle shop interaction
-    const nearShop = this.shopkeeper.isNearPlayer(this.player.getPosition());
-    if (nearShop) {
-      if (this.input.isKeyPressed(Keys.F) && !this.shopToggled) {
-        this.shopToggled = true;
-        if (this.shop.isShopOpen()) {
-          this.shop.close();
-          this.audioSystem.playSound('uiClose', 0.5);
-        } else {
-          this.shop.open();
-          this.audioSystem.playSound('uiOpen', 0.5);
-        }
-      }
-    } else if (this.shop.isShopOpen()) {
+    // Shop interaction is now handled through ActionSystem
+    // Auto-close shop if player walks away
+    if (this.shop.isShopOpen() && !this.shopkeeper.isNearPlayer(this.player.getPosition())) {
       this.shop.close();
     }
     
@@ -1093,6 +1169,9 @@ export class Game {
     
     // Render player last
     this.renderPlayer();
+    
+    // Render tile action badges
+    this.tileActionRenderer.renderTileActions(this.spriteBatch, this.currentTileActions);
     
     this.spriteBatch.end();
   }
@@ -1331,14 +1410,6 @@ export class Game {
       this.spriteBatch.flush(); // Flush after drawing shopkeeper
     }
     
-    // Show interaction prompt if near player
-    if (this.shopkeeper.isNearPlayer(this.player.getPosition())) {
-      // Draw a simple "!" above the NPC
-      this.whiteTexture.bind(0);
-      this.spriteBatch.drawTexturedQuad(pos.x, pos.y - 20, 4, 16);
-      this.spriteBatch.drawTexturedQuad(pos.x, pos.y - 30, 4, 4);
-      this.spriteBatch.flush();
-    }
   }
   
   private renderPlayer(): void {
@@ -1350,13 +1421,14 @@ export class Game {
     
     // Map tool type from inventory system
     let toolType = undefined;
-    if (selectedItem && selectedItem.type === 'tool' && selectedItem.toolType) {
+    if (selectedItem && selectedItem.toolType) {
       // Map string tool types to ToolType enum
       switch (selectedItem.toolType) {
         case 'hoe': toolType = ToolType.Hoe; break;
         case 'axe': toolType = ToolType.Axe; break;
         case 'wateringCan': toolType = ToolType.WateringCan; break;
         case 'scythe': toolType = ToolType.Scythe; break;
+        case 'seeds': toolType = ToolType.Seeds; break;
       }
     }
     
