@@ -91,9 +91,14 @@ export class Game {
     const interactableShopkeeper = new InteractableNPC(this.shopkeeper, this, this.shop);
     this.actionSystem.registerInteractable('shopkeeper', interactableShopkeeper);
     
-    this.loadAssets();
     this.setupEventListeners();
-    this.loadAndPlayMusic();
+    this.init();
+  }
+  
+  private async init(): Promise<void> {
+    await this.loadAssets();
+    await this.loadAndPlayMusic();
+    this.start();
   }
   
   private setupCanvas(): void {
@@ -149,14 +154,24 @@ export class Game {
     }
   }
   
-  private loadAssets(): void {
+  private async loadAssets(): Promise<void> {
     const gl = this.renderer.getGL();
     
     // Create white texture for rendering colored quads
     this.whiteTexture = Texture.createSolid(gl, 1, 1, 255, 255, 255);
     
-    // Generate tile textures
-    this.textures.set('grass', Texture.generateGrassTile(gl));
+    // Load grass texture from image
+    try {
+      console.log('Loading grass texture from image...');
+      const grassTexture = await Texture.load(gl, '/src/images/grass.png');
+      this.textures.set('grass', grassTexture);
+      console.log('Grass texture loaded successfully');
+    } catch (error) {
+      console.error('Failed to load grass.png, using procedural texture:', error);
+      this.textures.set('grass', Texture.generateGrassTile(gl));
+    }
+    
+    // Generate other tile textures (keep procedural for now)
     this.textures.set('dirt', Texture.generateDirtTile(gl));
     this.textures.set('stone', Texture.generateStoneTile(gl));
     this.textures.set('water', Texture.generateWaterTile(gl));
@@ -179,8 +194,16 @@ export class Game {
     this.textures.set('item_seeds', this.generateSeedItemTexture());
     this.textures.set('item_wood', this.generateWoodItemTexture());
     
-    // Generate tree texture
-    this.textures.set('tree', this.generateTreeTexture());
+    // Load tree texture from image
+    try {
+      console.log('Loading tree texture from image...');
+      const treeTexture = await Texture.load(gl, '/src/images/tree.png');
+      this.textures.set('tree', treeTexture);
+      console.log('Tree texture loaded successfully');
+    } catch (error) {
+      console.error('Failed to load tree.png, using procedural texture:', error);
+      this.textures.set('tree', this.generateTreeTexture());
+    }
     
     // Generate NPC textures
     const shopkeeperTex = this.generateShopkeeperTexture();
@@ -517,7 +540,7 @@ export class Game {
   
   private generateTreeTexture(): Texture {
     const gl = this.renderer.getGL();
-    const size = 32;
+    const size = 48; // Larger texture size
     const canvas = document.createElement('canvas');
     canvas.width = size;
     canvas.height = size;
@@ -526,39 +549,39 @@ export class Game {
     // Clear canvas to transparent
     ctx.clearRect(0, 0, size, size);
     
-    // Tree trunk
+    // Tree trunk (scaled up)
     ctx.fillStyle = '#654321';
-    ctx.fillRect(12, 20, 8, 12);
+    ctx.fillRect(18, 30, 12, 18);
     
-    // Trunk texture
+    // Trunk texture (scaled up)
     ctx.strokeStyle = '#4a3018';
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(14, 20);
-    ctx.lineTo(14, 32);
-    ctx.moveTo(18, 20);
-    ctx.lineTo(18, 32);
+    ctx.moveTo(21, 30);
+    ctx.lineTo(21, 48);
+    ctx.moveTo(27, 30);
+    ctx.lineTo(27, 48);
     ctx.stroke();
     
-    // Tree foliage (circular canopy)
+    // Tree foliage (circular canopy - scaled up)
     ctx.fillStyle = '#228b22';
     ctx.beginPath();
-    ctx.arc(16, 12, 10, 0, Math.PI * 2);
+    ctx.arc(24, 18, 15, 0, Math.PI * 2);
     ctx.fill();
     
-    // Foliage highlights
+    // Foliage highlights (scaled up)
     ctx.fillStyle = '#32cd32';
     ctx.beginPath();
-    ctx.arc(14, 10, 4, 0, Math.PI * 2);
+    ctx.arc(21, 15, 6, 0, Math.PI * 2);
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(19, 11, 3, 0, Math.PI * 2);
+    ctx.arc(28, 16, 4.5, 0, Math.PI * 2);
     ctx.fill();
     
-    // Shadow
+    // Shadow (scaled up)
     ctx.fillStyle = '#1f5f1f';
     ctx.beginPath();
-    ctx.arc(16, 15, 7, 0, Math.PI);
+    ctx.arc(24, 22, 10, 0, Math.PI);
     ctx.fill();
     
     const imageData = ctx.getImageData(0, 0, size, size);
@@ -783,8 +806,9 @@ export class Game {
   }
   
   public start(): void {
+    console.log('Starting game with loaded textures...');
     this.lastTime = performance.now();
-    this.gameLoop();
+    requestAnimationFrame(this.gameLoop);
   }
   
   private gameLoop = (): void => {
@@ -1382,7 +1406,15 @@ export class Game {
             this.spriteBatch.flush();
             const treeTexture = this.textures.get('tree')!;
             treeTexture.bind(0);
-            this.spriteBatch.drawTexturedQuad(worldX + tileSize/2, worldY + tileSize/2, tileSize, tileSize);
+            // Make trees 1.5x larger and offset slightly up
+            const treeSize = tileSize * 1.5;
+            const treeOffsetY = -tileSize * 0.2; // Offset up by 20% of tile size
+            this.spriteBatch.drawTexturedQuad(
+              worldX + tileSize/2, 
+              worldY + tileSize/2 + treeOffsetY, 
+              treeSize, 
+              treeSize
+            );
           }
         }
       }

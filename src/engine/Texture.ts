@@ -21,6 +21,36 @@ export class Texture {
     texture.setData(imageData.data);
     return texture;
   }
+  
+  public static async load(gl: WebGL2RenderingContext, url: string): Promise<Texture> {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => {
+        const texture = new Texture(gl, image.width, image.height);
+        
+        gl.bindTexture(gl.TEXTURE_2D, texture.texture);
+        gl.texImage2D(
+          gl.TEXTURE_2D,
+          0,
+          gl.RGBA,
+          gl.RGBA,
+          gl.UNSIGNED_BYTE,
+          image
+        );
+        
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        
+        resolve(texture);
+      };
+      image.onerror = () => {
+        reject(new Error(`Failed to load image: ${url}`));
+      };
+      image.src = url;
+    });
+  }
 
   public static createSolid(gl: WebGL2RenderingContext, width: number, height: number, r: number, g: number, b: number, a: number = 255): Texture {
     const texture = new Texture(gl, width, height);
@@ -181,5 +211,9 @@ export class Texture {
 
   public getHeight(): number {
     return this.height;
+  }
+  
+  public dispose(): void {
+    this.gl.deleteTexture(this.texture);
   }
 }
