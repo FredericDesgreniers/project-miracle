@@ -20,6 +20,7 @@ import { ActionSystem } from './ActionSystem';
 import { InteractableNPC } from './InteractableNPC';
 import { InteractableTile } from './InteractableTile';
 import { TileActionRenderer, TileAction } from './TileActionRenderer';
+import { Blacksmith } from './Blacksmith';
 
 export class Game {
   private canvas: HTMLCanvasElement;
@@ -33,6 +34,8 @@ export class Game {
   private itemDropManager: ItemDropManager;
   private shopkeeper: NPC;
   private shop: Shop;
+  private blacksmithNPC: NPC;
+  private blacksmith: Blacksmith;
   
   private textures: Map<string, Texture> = new Map();
   private whiteTexture!: Texture;
@@ -53,6 +56,73 @@ export class Game {
   private tileActionRenderer: TileActionRenderer;
   private currentTileActions: TileAction[] = [];
   
+  private findSafeSpawnPosition(): Vec2 {
+    const tileSize = this.tileMap.getTileSize();
+    const worldWidth = this.tileMap.getWidth();
+    const worldHeight = this.tileMap.getHeight();
+    
+    // Try to find a grass or dirt tile near the center of the map
+    const centerX = Math.floor(worldWidth / 2);
+    const centerY = Math.floor(worldHeight / 2);
+    
+    // Search in expanding circles from the center
+    for (let radius = 0; radius < Math.max(worldWidth, worldHeight) / 2; radius++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        for (let dy = -radius; dy <= radius; dy++) {
+          // Only check points on the circle perimeter for efficiency
+          if (Math.abs(dx) !== radius && Math.abs(dy) !== radius) continue;
+          
+          const x = centerX + dx;
+          const y = centerY + dy;
+          
+          if (x >= 0 && x < worldWidth && y >= 0 && y < worldHeight) {
+            const tile = this.tileMap.getTileAt(x, y);
+            if (tile && (tile.type === TileType.Grass || tile.type === TileType.Dirt) && !tile.solid) {
+              // Found a safe tile, return world coordinates
+              return new Vec2(x * tileSize + tileSize / 2, y * tileSize + tileSize / 2);
+            }
+          }
+        }
+      }
+    }
+    
+    // Fallback to center if no safe position found (shouldn't happen)
+    console.warn('No safe spawn position found, using center');
+    return new Vec2(worldWidth * tileSize / 2, worldHeight * tileSize / 2);
+  }
+  
+  private findSafePositionNear(nearX: number, nearY: number, maxDistance: number): Vec2 {
+    const tileSize = this.tileMap.getTileSize();
+    const startTileX = Math.floor(nearX / tileSize);
+    const startTileY = Math.floor(nearY / tileSize);
+    const maxTileRadius = Math.ceil(maxDistance / tileSize);
+    
+    // Search in expanding circles from the starting position
+    for (let radius = 1; radius <= maxTileRadius; radius++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        for (let dy = -radius; dy <= radius; dy++) {
+          // Only check points on the circle perimeter
+          if (Math.abs(dx) !== radius && Math.abs(dy) !== radius) continue;
+          
+          const x = startTileX + dx;
+          const y = startTileY + dy;
+          
+          if (x >= 0 && x < this.tileMap.getWidth() && y >= 0 && y < this.tileMap.getHeight()) {
+            const tile = this.tileMap.getTileAt(x, y);
+            if (tile && (tile.type === TileType.Grass || tile.type === TileType.Dirt) && !tile.solid) {
+              // Found a safe tile
+              return new Vec2(x * tileSize + tileSize / 2, y * tileSize + tileSize / 2);
+            }
+          }
+        }
+      }
+    }
+    
+    // If no safe position found nearby, return the original position
+    console.warn('No safe position found near', nearX, nearY);
+    return new Vec2(nearX, nearY);
+  }
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.setupCanvas();
@@ -63,14 +133,18 @@ export class Game {
     this.input = new Input(canvas);
     
     this.tileMap = new TileMap(50, 50, 32);
-    this.player = new Player(400, 300);
+    
+    // Find a safe spawn position for the player
+    const spawnPos = this.findSafeSpawnPosition();
+    this.player = new Player(spawnPos.x, spawnPos.y);
     this.itemDropManager = new ItemDropManager();
     
-    // Create shopkeeper NPC
+    // Create shopkeeper NPC at a safe position near spawn
+    const shopkeeperPos = this.findSafePositionNear(spawnPos.x, spawnPos.y, 200);
     this.shopkeeper = new NPC({
       id: 'shopkeeper',
       name: 'Emma',
-      position: new Vec2(600, 300),
+      position: shopkeeperPos,
       type: 'shopkeeper',
       dialogue: [
         'Welcome to Emma\'s Seeds & Produce!',
@@ -80,6 +154,22 @@ export class Game {
     });
     
     this.shop = new Shop();
+    
+    // Create blacksmith NPC at a safe position away from shopkeeper
+    const blacksmithPos = this.findSafePositionNear(spawnPos.x + 300, spawnPos.y, 200);
+    this.blacksmithNPC = new NPC({
+      id: 'blacksmith',
+      name: 'Bjorn',
+      position: blacksmithPos,
+      type: 'blacksmith',
+      dialogue: [
+        'Welcome to Bjorn\'s Forge!',
+        'I buy wood and sell fine metal ingots.',
+        'Press F to trade!'
+      ]
+    });
+    
+    this.blacksmith = new Blacksmith();
     
     this.audioSystem = new AudioSystem();
     this.inventorySystem = new InventorySystem();
@@ -91,8 +181,94 @@ export class Game {
     const interactableShopkeeper = new InteractableNPC(this.shopkeeper, this, this.shop);
     this.actionSystem.registerInteractable('shopkeeper', interactableShopkeeper);
     
+    // Register blacksmith as interactable
+    const interactableBlacksmith = new InteractableNPC(this.blacksmithNPC, this, null, this.blacksmith);
+    this.actionSystem.registerInteractable('blacksmith', interactableBlacksmith);
+    
     this.setupEventListeners();
     this.init();
+    
+    // Make game instance accessible for shop buttons
+    (window as any).gameInstance = this;
+  }
+  
+  public handleShopBuy(): void {
+    console.log('Shop buy button clicked!');
+    if (this.player.getMoney() >= 10) {
+      this.player.spendMoney(10);
+      this.inventorySystem.addItem({
+        id: 'carrot_seeds',
+        name: 'Carrot Seeds',
+        icon: '🥕',
+        quantity: 5,
+        stackable: true,
+        type: 'seed',
+        toolType: 'seeds'
+      });
+      this.inventoryUI.updateHotbar();
+      this.updateShopUI();
+      this.audioSystem.playSound('pickup', 0.4);
+    }
+  }
+  
+  public handleShopSell(): void {
+    console.log('Shop sell button clicked!');
+    const carrotCount = this.inventorySystem.getItemCount('carrot');
+    if (carrotCount > 0) {
+      this.inventorySystem.removeItemById('carrot', 1);
+      this.player.addMoney(15);
+      this.inventoryUI.updateHotbar();
+      this.updateShopUI();
+      this.audioSystem.playSound('pickup', 0.5);
+    }
+  }
+  
+  public handleBlacksmithSellWood(): void {
+    console.log('Blacksmith sell wood clicked!');
+    const woodCount = this.inventorySystem.getItemCount('wood');
+    if (woodCount > 0) {
+      this.inventorySystem.removeItemById('wood', 1);
+      this.player.addMoney(5);
+      this.inventoryUI.updateHotbar();
+      this.updateBlacksmithUI();
+      this.audioSystem.playSound('pickup', 0.4);
+    }
+  }
+  
+  public handleBlacksmithBuyIron(): void {
+    console.log('Blacksmith buy iron clicked!');
+    if (this.player.getMoney() >= 25) {
+      this.player.spendMoney(25);
+      this.inventorySystem.addItem({
+        id: 'iron_ingot',
+        name: 'Iron Ingot',
+        icon: '⚙️',
+        quantity: 1,
+        stackable: true,
+        type: 'material'
+      });
+      this.inventoryUI.updateHotbar();
+      this.updateBlacksmithUI();
+      this.audioSystem.playSound('pickup', 0.5);
+    }
+  }
+  
+  public handleBlacksmithBuyGold(): void {
+    console.log('Blacksmith buy gold clicked!');
+    if (this.player.getMoney() >= 100) {
+      this.player.spendMoney(100);
+      this.inventorySystem.addItem({
+        id: 'gold_ingot',
+        name: 'Gold Ingot',
+        icon: '🟨',
+        quantity: 1,
+        stackable: true,
+        type: 'material'
+      });
+      this.inventoryUI.updateHotbar();
+      this.updateBlacksmithUI();
+      this.audioSystem.playSound('pickup', 0.6);
+    }
   }
   
   private async init(): Promise<void> {
@@ -264,12 +440,40 @@ export class Game {
       console.error('Failed to load character.png:', error);
     }
     
-    // Generate NPC textures
-    const shopkeeperTex = this.generateShopkeeperTexture();
-    this.textures.set('shopkeeper', shopkeeperTex);
+    // Load shopkeeper texture from image
+    try {
+      console.log('Loading shopkeeper texture from image...');
+      const shopkeeperTexture = await Texture.load(gl, '/src/images/shopkeeper-1.png');
+      this.textures.set('shopkeeper', shopkeeperTexture);
+      console.log('Shopkeeper texture loaded successfully');
+    } catch (error) {
+      console.error('Failed to load shopkeeper-1.png, using procedural texture:', error);
+      const shopkeeperTex = this.generateShopkeeperTexture();
+      this.textures.set('shopkeeper', shopkeeperTex);
+    }
     
-    // Generate shop stall texture
-    this.textures.set('shop_stall', this.generateShopStallTexture());
+    // Load blacksmith texture from image
+    try {
+      console.log('Loading blacksmith texture from image...');
+      const blacksmithTexture = await Texture.load(gl, '/src/images/blacksmith-1.png');
+      this.textures.set('blacksmith', blacksmithTexture);
+      console.log('Blacksmith texture loaded successfully');
+    } catch (error) {
+      console.error('Failed to load blacksmith-1.png, using procedural texture:', error);
+      const blacksmithTex = this.generateBlacksmithTexture();
+      this.textures.set('blacksmith', blacksmithTex);
+    }
+    
+    // Load shop stall texture from image
+    try {
+      console.log('Loading shop texture from image...');
+      const shopTexture = await Texture.load(gl, '/src/images/shop-1.png');
+      this.textures.set('shop_stall', shopTexture);
+      console.log('Shop texture loaded successfully');
+    } catch (error) {
+      console.error('Failed to load shop-1.png, using procedural texture:', error);
+      this.textures.set('shop_stall', this.generateShopStallTexture());
+    }
   }
   
   private generatePlayerTexture(facing: string = 'down', toolType?: ToolType, animProgress: number = 0): Texture {
@@ -725,6 +929,53 @@ export class Game {
     return Texture.fromImageData(gl, imageData);
   }
   
+  private generateBlacksmithTexture(): Texture {
+    const gl = this.renderer.getGL();
+    const size = 32;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+    
+    // Body - leather apron
+    ctx.fillStyle = '#654321';
+    ctx.fillRect(8, 12, 16, 16);
+    
+    // Arms (muscular)
+    ctx.fillStyle = '#d2691e';
+    ctx.fillRect(5, 14, 3, 10);
+    ctx.fillRect(24, 14, 3, 10);
+    
+    // Head
+    ctx.fillStyle = '#daa520';
+    ctx.beginPath();
+    ctx.arc(16, 10, 6, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Hair (dark brown)
+    ctx.fillStyle = '#2f1f0f';
+    ctx.beginPath();
+    ctx.arc(16, 7, 7, Math.PI, 0);
+    ctx.fill();
+    
+    // Beard
+    ctx.fillStyle = '#2f1f0f';
+    ctx.fillRect(12, 12, 8, 4);
+    
+    // Eyes
+    ctx.fillStyle = '#000';
+    ctx.fillRect(13, 9, 2, 2);
+    ctx.fillRect(17, 9, 2, 2);
+    
+    // Hammer in hand
+    ctx.fillStyle = '#696969';
+    ctx.fillRect(26, 16, 2, 6);
+    ctx.fillRect(25, 15, 4, 2);
+    
+    const imageData = ctx.getImageData(0, 0, size, size);
+    return Texture.fromImageData(gl, imageData);
+  }
+  
   private generateShopkeeperPortrait(): string {
     const size = 256;
     const canvas = document.createElement('canvas');
@@ -940,6 +1191,19 @@ export class Game {
       });
     }
     
+    // Check for blacksmith interactions
+    if (this.blacksmithNPC.isNearPlayer(this.player.getPosition())) {
+      const npcWorldPos = this.blacksmithNPC.position;
+      this.currentTileActions.push({
+        position: new Vec2(npcWorldPos.x, npcWorldPos.y - 16),
+        key: 'E'
+      });
+      this.currentTileActions.push({
+        position: new Vec2(npcWorldPos.x, npcWorldPos.y),
+        key: 'F'
+      });
+    }
+    
     // Check for tile interactions at mouse position
     if (this.hoveredTile) {
       const tile = this.tileMap.getTileAt(this.hoveredTile.x, this.hoveredTile.y);
@@ -996,6 +1260,12 @@ export class Game {
         anyClosed = true;
       }
       
+      // Close blacksmith if open
+      if (this.blacksmith.isBlacksmithOpen()) {
+        this.blacksmith.close();
+        anyClosed = true;
+      }
+      
       // Play close sound if any menu was closed
       if (anyClosed) {
         this.audioSystem.playSound('uiClose', 0.5);
@@ -1018,7 +1288,7 @@ export class Game {
       }
     }
     
-    // Handle F key for shop
+    // Handle F key for shop and blacksmith
     if (this.input.isKeyPressed(Keys.F)) {
       if (this.shopkeeper.isNearPlayer(this.player.getPosition())) {
         if (this.shop.isShopOpen()) {
@@ -1026,6 +1296,14 @@ export class Game {
           this.audioSystem.playSound('uiClose', 0.5);
         } else {
           this.shop.open();
+          this.audioSystem.playSound('uiOpen', 0.5);
+        }
+      } else if (this.blacksmithNPC.isNearPlayer(this.player.getPosition())) {
+        if (this.blacksmith.isBlacksmithOpen()) {
+          this.blacksmith.close();
+          this.audioSystem.playSound('uiClose', 0.5);
+        } else {
+          this.blacksmith.open();
           this.audioSystem.playSound('uiOpen', 0.5);
         }
       }
@@ -1212,6 +1490,9 @@ export class Game {
     
     // Show shop UI if open
     this.updateShopUI();
+    
+    // Show blacksmith UI if open
+    this.updateBlacksmithUI();
   }
   
   private updateShopUI(): void {
@@ -1237,33 +1518,199 @@ export class Game {
           box-shadow: 0 0 50px rgba(0, 0, 0, 0.8);
         `;
         document.body.appendChild(shopElement);
+        
+        // Add a single event listener that persists
+        shopElement.addEventListener('click', (e) => {
+          const target = e.target as HTMLElement;
+          if (target.id === 'buy-seeds-btn') {
+            this.handleShopBuy();
+          } else if (target.id === 'sell-carrot-btn') {
+            this.handleShopSell();
+          }
+        });
       }
       
       const carrots = this.inventorySystem.getItemCount('carrot');
-      const portrait = this.generateShopkeeperPortrait();
       
-      shopElement.innerHTML = `
-        <div style="display: flex; gap: 30px; align-items: flex-start;">
-          <div>
-            <img src="${portrait}" style="width: 256px; height: 256px; image-rendering: pixelated; border: 3px solid #FFD700; border-radius: 8px;">
-            <p style="margin-top: 10px; font-style: italic;">"Welcome to my shop!"</p>
-          </div>
-          <div style="min-width: 250px;">
-            <h2>Emma's Seeds & Produce</h2>
-            <div style="margin: 20px 0;">
-              <p>Your money: ${this.player.getMoney()} coins</p>
-              <p>Your carrots: ${carrots}</p>
+      // Only update the dynamic content, not the entire innerHTML
+      if (!shopElement.querySelector('.shop-content')) {
+        shopElement.innerHTML = `
+          <div style="display: flex; gap: 30px; align-items: flex-start;">
+            <div>
+              <img src="/src/images/shopkeeper-1.png" style="width: 256px; height: 256px; image-rendering: pixelated; border: 3px solid #FFD700; border-radius: 8px; object-fit: cover;">
+              <p style="margin-top: 10px; font-style: italic;">"Welcome to my shop!"</p>
             </div>
-            <div style="margin: 20px 0; text-align: left;">
-              <p style="padding: 8px; background: rgba(255,255,255,0.1); margin: 5px 0;">[1] Buy 5 seeds - 10 coins</p>
-              <p style="padding: 8px; background: rgba(255,255,255,0.1); margin: 5px 0;">[2] Sell 1 carrot - 15 coins</p>
+            <div class="shop-content" style="min-width: 250px;">
+              <!-- Dynamic content goes here -->
             </div>
-            <p style="margin-top: 20px; font-size: 14px;">Press F to close</p>
           </div>
-        </div>
-      `;
+        `;
+      }
+      
+      // Update only the dynamic content
+      const contentDiv = shopElement.querySelector('.shop-content');
+      if (contentDiv) {
+        contentDiv.innerHTML = `
+          <h2>Emma's Seeds & Produce</h2>
+          <div style="margin: 20px 0;">
+            <p>Your money: ${this.player.getMoney()} coins</p>
+            <p>Your carrots: ${carrots}</p>
+          </div>
+          <div style="margin: 20px 0; text-align: left;">
+            <button id="buy-seeds-btn" style="
+              display: block;
+              width: 100%;
+              padding: 12px;
+              margin: 8px 0;
+              background: rgba(46, 204, 113, 0.8);
+              color: white;
+              border: 2px solid #27ae60;
+              border-radius: 6px;
+              font-size: 16px;
+              cursor: pointer;
+              transition: all 0.2s;
+            " onmouseover="this.style.background='rgba(46, 204, 113, 1)'" onmouseout="this.style.background='rgba(46, 204, 113, 0.8)'">
+              [1] Buy 5 seeds - 10 coins
+            </button>
+            <button id="sell-carrot-btn" style="
+              display: block;
+              width: 100%;
+              padding: 12px;
+              margin: 8px 0;
+              background: rgba(231, 76, 60, 0.8);
+              color: white;
+              border: 2px solid #c0392b;
+              border-radius: 6px;
+              font-size: 16px;
+              cursor: pointer;
+              transition: all 0.2s;
+            " onmouseover="this.style.background='rgba(231, 76, 60, 1)'" onmouseout="this.style.background='rgba(231, 76, 60, 0.8)'">
+              [2] Sell 1 carrot - 15 coins
+            </button>
+          </div>
+          <p style="margin-top: 20px; font-size: 14px;">Press F to close</p>
+        `;
+      }
     } else if (shopElement) {
       shopElement.remove();
+    }
+  }
+  
+  private updateBlacksmithUI(): void {
+    let blacksmithElement = document.getElementById('blacksmithUI');
+    
+    if (this.blacksmith.isBlacksmithOpen()) {
+      if (!blacksmithElement) {
+        blacksmithElement = document.createElement('div');
+        blacksmithElement.id = 'blacksmithUI';
+        blacksmithElement.style.cssText = `
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          background: rgba(20, 10, 0, 0.95);
+          color: white;
+          padding: 30px;
+          border-radius: 15px;
+          border: 3px solid #8B4513;
+          text-align: center;
+          font-size: 16px;
+          z-index: 1000;
+          box-shadow: 0 0 50px rgba(255, 100, 0, 0.3);
+        `;
+        document.body.appendChild(blacksmithElement);
+        
+        // Add event listener
+        blacksmithElement.addEventListener('click', (e) => {
+          const target = e.target as HTMLElement;
+          if (target.id === 'sell-wood-btn') {
+            this.handleBlacksmithSellWood();
+          } else if (target.id === 'buy-iron-btn') {
+            this.handleBlacksmithBuyIron();
+          } else if (target.id === 'buy-gold-btn') {
+            this.handleBlacksmithBuyGold();
+          }
+        });
+      }
+      
+      const woodCount = this.inventorySystem.getItemCount('wood');
+      
+      // Only update the dynamic content
+      if (!blacksmithElement.querySelector('.blacksmith-content')) {
+        blacksmithElement.innerHTML = `
+          <div style="display: flex; gap: 30px; align-items: flex-start;">
+            <div>
+              <img src="/src/images/blacksmith-1.png" style="width: 256px; height: 256px; image-rendering: pixelated; border: 3px solid #8B4513; border-radius: 8px; object-fit: cover;">
+              <p style="margin-top: 10px; font-style: italic;">"Need some fine metalwork?"</p>
+            </div>
+            <div class="blacksmith-content" style="min-width: 300px;">
+              <!-- Dynamic content goes here -->
+            </div>
+          </div>
+        `;
+      }
+      
+      // Update only the dynamic content
+      const contentDiv = blacksmithElement.querySelector('.blacksmith-content');
+      if (contentDiv) {
+        contentDiv.innerHTML = `
+          <h2>Blacksmith's Forge</h2>
+          <div style="margin: 20px 0;">
+            <p>Your money: ${this.player.getMoney()} coins</p>
+            <p>Your wood: ${woodCount}</p>
+          </div>
+          <div style="margin: 20px 0; text-align: left;">
+            <button id="sell-wood-btn" style="
+              display: block;
+              width: 100%;
+              padding: 12px;
+              margin: 8px 0;
+              background: rgba(139, 69, 19, 0.8);
+              color: white;
+              border: 2px solid #654321;
+              border-radius: 6px;
+              font-size: 16px;
+              cursor: pointer;
+              transition: all 0.2s;
+            " onmouseover="this.style.background='rgba(139, 69, 19, 1)'" onmouseout="this.style.background='rgba(139, 69, 19, 0.8)'">
+              [1] Sell Wood - 5 coins each
+            </button>
+            <button id="buy-iron-btn" style="
+              display: block;
+              width: 100%;
+              padding: 12px;
+              margin: 8px 0;
+              background: rgba(70, 70, 70, 0.8);
+              color: white;
+              border: 2px solid #555;
+              border-radius: 6px;
+              font-size: 16px;
+              cursor: pointer;
+              transition: all 0.2s;
+            " onmouseover="this.style.background='rgba(70, 70, 70, 1)'" onmouseout="this.style.background='rgba(70, 70, 70, 0.8)'">
+              [2] Buy Iron Ingot - 25 coins
+            </button>
+            <button id="buy-gold-btn" style="
+              display: block;
+              width: 100%;
+              padding: 12px;
+              margin: 8px 0;
+              background: rgba(255, 215, 0, 0.8);
+              color: black;
+              border: 2px solid #FFD700;
+              border-radius: 6px;
+              font-size: 16px;
+              cursor: pointer;
+              transition: all 0.2s;
+            " onmouseover="this.style.background='rgba(255, 215, 0, 1)'" onmouseout="this.style.background='rgba(255, 215, 0, 0.8)'">
+              [3] Buy Gold Ingot - 100 coins
+            </button>
+          </div>
+          <p style="margin-top: 20px; font-size: 14px;">Press F to close</p>
+        `;
+      }
+    } else if (blacksmithElement) {
+      blacksmithElement.remove();
     }
   }
   
@@ -1466,14 +1913,8 @@ export class Game {
           case TileType.Grass:
             texture = this.textures.get('grass')!;
             break;
-          case TileType.Dirt:
-            texture = this.textures.get('dirt')!;
-            break;
           case TileType.Stone:
             texture = this.textures.get('stone')!;
-            break;
-          case TileType.Water:
-            texture = this.textures.get('water')!;
             break;
           case TileType.TilledDirt:
             texture = tile.watered ? this.textures.get('wateredDirt')! : this.textures.get('tilledDirt')!;
@@ -1619,11 +2060,11 @@ export class Game {
       let texture: Texture | null = null;
       
       if (drop.itemType === 'seeds') {
-        texture = this.textures.get('item_seeds');
+        texture = this.textures.get('item_seeds') || null;
       } else if (drop.itemType === 'carrot') {
-        texture = this.textures.get('item_carrot');
+        texture = this.textures.get('item_carrot') || null;
       } else if (drop.itemType === 'wood') {
-        texture = this.textures.get('item_wood');
+        texture = this.textures.get('item_wood') || null;
       }
       
       if (texture) {
@@ -1663,19 +2104,29 @@ export class Game {
   }
   
   private renderNPC(): void {
-    // Get the shopkeeper position first
-    const pos = this.shopkeeper.position;
-    const bobOffset = this.shopkeeper.getAnimOffset();
+    // Render shopkeeper
+    const shopPos = this.shopkeeper.position;
+    const shopBobOffset = this.shopkeeper.getAnimOffset();
     
-    // Always render the shopkeeper with her texture
     const shopkeeperTexture = this.textures.get('shopkeeper');
     if (shopkeeperTexture) {
       this.spriteBatch.flush();
       shopkeeperTexture.bind(0);
-      this.spriteBatch.drawTexturedQuad(pos.x, pos.y + bobOffset, 32, 32);
-      this.spriteBatch.flush(); // Flush after drawing shopkeeper
+      this.spriteBatch.drawTexturedQuad(shopPos.x, shopPos.y + shopBobOffset, 32, 32);
+      this.spriteBatch.flush();
     }
     
+    // Render blacksmith
+    const blacksmithPos = this.blacksmithNPC.position;
+    const blacksmithBobOffset = this.blacksmithNPC.getAnimOffset();
+    
+    const blacksmithTexture = this.textures.get('blacksmith');
+    if (blacksmithTexture) {
+      this.spriteBatch.flush();
+      blacksmithTexture.bind(0);
+      this.spriteBatch.drawTexturedQuad(blacksmithPos.x, blacksmithPos.y + blacksmithBobOffset, 32, 32);
+      this.spriteBatch.flush();
+    }
   }
   
   private renderPlayer(): void {

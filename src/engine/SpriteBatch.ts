@@ -14,8 +14,8 @@ export class SpriteBatch {
   private spriteShader: Shader;
   private colorShader: Shader;
   
-  private vertexBuffer: WebGLBuffer;
-  private indexBuffer: WebGLBuffer;
+  private vertexBuffer!: WebGLBuffer;
+  private indexBuffer!: WebGLBuffer;
   private vertices: Float32Array;
   private indices: Uint16Array;
   

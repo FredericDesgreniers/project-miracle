@@ -20,7 +20,7 @@ export class ActionIndicator {
   public position: Vec2;
   public actions: Action[];
   public opacity: number = 1; // Start visible for testing
-  private targetOpacity: number = 1;
+  public targetOpacity: number = 1;
   
   constructor(position: Vec2, actions: Action[]) {
     this.position = position;

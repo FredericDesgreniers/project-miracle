@@ -135,7 +135,7 @@ export class InventoryUI {
       keyHint.textContent = (index + 1).toString();
       slotElement.appendChild(keyHint);
       
-      this.hotbarContainer.appendChild(slotElement);
+      this.hotbarContainer!.appendChild(slotElement);
     });
   }
   

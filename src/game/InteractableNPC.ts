@@ -4,17 +4,20 @@ import { NPC } from './NPC';
 import { Keys } from '../engine/Input';
 import { Shop } from './Shop';
 import { Game } from './Game';
+import { Blacksmith } from './Blacksmith';
 
 export class InteractableNPC implements Interactable {
   private npc: NPC;
   private shop?: Shop;
+  private blacksmith?: Blacksmith;
   private game: Game;
   private onInteract?: () => void;
   
-  constructor(npc: NPC, game: Game, shop?: Shop) {
+  constructor(npc: NPC, game: Game, shop?: Shop, blacksmith?: Blacksmith) {
     this.npc = npc;
     this.game = game;
     this.shop = shop;
+    this.blacksmith = blacksmith;
   }
   
   get position(): Vec2 {
@@ -41,6 +44,17 @@ export class InteractableNPC implements Interactable {
         key: 'F',
         keyCode: Keys.F,
         icon: '🛍️'
+      });
+    }
+    
+    // Blacksmith action
+    if (this.npc.type === 'blacksmith' && this.blacksmith) {
+      actions.push({
+        id: 'blacksmith',
+        name: 'Forge',
+        key: 'F',
+        keyCode: Keys.F,
+        icon: '🔨'
       });
     }
     
@@ -80,6 +94,16 @@ export class InteractableNPC implements Interactable {
             this.shop.close();
           } else {
             this.shop.open();
+          }
+        }
+        break;
+        
+      case 'blacksmith':
+        if (this.blacksmith) {
+          if (this.blacksmith.isBlacksmithOpen()) {
+            this.blacksmith.close();
+          } else {
+            this.blacksmith.open();
           }
         }
         break;

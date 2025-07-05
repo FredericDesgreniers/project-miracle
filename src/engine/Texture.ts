@@ -18,7 +18,7 @@ export class Texture {
 
   public static fromImageData(gl: WebGL2RenderingContext, imageData: ImageData): Texture {
     const texture = new Texture(gl, imageData.width, imageData.height);
-    texture.setData(imageData.data);
+    texture.setData(new Uint8Array(imageData.data));
     return texture;
   }
   
