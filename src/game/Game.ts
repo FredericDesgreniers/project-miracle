@@ -14,6 +14,8 @@ import { Shader } from '../engine/Shader';
 import { spriteVertexShader, spriteFragmentShader } from '../engine/shaders/sprite';
 import { Mat4 } from '../utils/math';
 import { AudioSystem } from '../engine/AudioSystem';
+import { InventorySystem } from './InventorySystem';
+import { InventoryUI } from './InventoryUI';
 
 export class Game {
   private canvas: HTMLCanvasElement;
@@ -41,6 +43,8 @@ export class Game {
   private audioSystem: AudioSystem;
   private lastFootstepTime: number = 0;
   private footstepInterval: number = 0.3; // Time between footsteps
+  private inventorySystem: InventorySystem;
+  private inventoryUI: InventoryUI;
   
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -71,6 +75,8 @@ export class Game {
     this.shop = new Shop();
     
     this.audioSystem = new AudioSystem();
+    this.inventorySystem = new InventorySystem();
+    this.inventoryUI = new InventoryUI(this.inventorySystem);
     
     this.loadAssets();
     this.setupEventListeners();
@@ -463,6 +469,9 @@ export class Game {
     canvas.height = size;
     const ctx = canvas.getContext('2d')!;
     
+    // Clear canvas to transparent
+    ctx.clearRect(0, 0, size, size);
+    
     // Tree trunk
     ctx.fillStyle = '#654321';
     ctx.fillRect(12, 20, 8, 12);
@@ -763,12 +772,14 @@ export class Game {
     
     // Update player
     const movement = this.input.getMovementVector();
-    this.player.update(deltaTime, movement, this.tileMap);
+    const isSprinting = this.input.isKeyDown(Keys.Shift);
+    this.player.update(deltaTime, movement, this.tileMap, isSprinting);
     
     // Play footstep sounds when moving
     if (movement.length() > 0 && !this.player.isAnimatingTool()) {
       this.lastFootstepTime += deltaTime;
-      if (this.lastFootstepTime >= this.footstepInterval) {
+      const currentFootstepInterval = isSprinting ? this.footstepInterval * 0.6 : this.footstepInterval;
+      if (this.lastFootstepTime >= currentFootstepInterval) {
         this.audioSystem.playFootstep();
         this.lastFootstepTime = 0;
       }
@@ -776,21 +787,116 @@ export class Game {
       this.lastFootstepTime = this.footstepInterval; // Reset so next step plays immediately
     }
     
-    // Handle interactions
-    if (this.input.isKeyPressed(Keys.E) || this.input.isKeyPressed(Keys.Space)) {
-      this.player.interact(this.tileMap, this.itemDropManager, this.audioSystem);
+    // Handle escape key to close menus
+    if (this.input.isKeyPressed(Keys.Escape)) {
+      let anyClosed = false;
+      
+      // Close inventory if open
+      if (this.inventorySystem.isInventoryOpen()) {
+        this.inventorySystem.toggleInventory();
+        this.inventoryUI.hideInventory();
+        anyClosed = true;
+      }
+      
+      // Close shop if open
+      if (this.shop.isShopOpen()) {
+        this.shop.close();
+        anyClosed = true;
+      }
+      
+      // Play close sound if any menu was closed
+      if (anyClosed) {
+        this.audioSystem.playSound('uiClose', 0.5);
+      }
+    }
+    
+    // Handle inventory toggle
+    if (this.input.isKeyPressed('KeyE')) {
+      this.inventorySystem.toggleInventory();
+      if (this.inventorySystem.isInventoryOpen()) {
+        this.inventoryUI.showInventory();
+      } else {
+        this.inventoryUI.hideInventory();
+      }
+    }
+    
+    // Handle tool interactions (only if inventory is closed)
+    if (!this.inventorySystem.isInventoryOpen() && this.input.isKeyPressed(Keys.Space)) {
+      const selectedItem = this.inventorySystem.getSelectedHotbarItem();
+      if (selectedItem) {
+        if ((selectedItem.type === 'tool' || selectedItem.type === 'seed') && selectedItem.toolType) {
+          this.player.interact(this.tileMap, this.itemDropManager, this.audioSystem, selectedItem.toolType);
+          
+          // Consume seed if it was planted
+          if (selectedItem.type === 'seed' && selectedItem.toolType === 'seeds') {
+            // Check if planting was successful by checking the tile
+            const playerPos = this.player.getPosition();
+            const facing = this.player.getFacing();
+            let targetX = playerPos.x;
+            let targetY = playerPos.y;
+            const interactDistance = 32;
+            
+            switch (facing) {
+              case 'up': targetY -= interactDistance; break;
+              case 'down': targetY += interactDistance; break;
+              case 'left': targetX -= interactDistance; break;
+              case 'right': targetX += interactDistance; break;
+            }
+            
+            const tileX = Math.floor(targetX / 32);
+            const tileY = Math.floor(targetY / 32);
+            const tile = this.tileMap.getTileAt(tileX, tileY);
+            
+            if (tile && tile.planted) {
+              // Seed was planted, remove one from inventory
+              if (selectedItem.quantity > 1) {
+                selectedItem.quantity--;
+              } else {
+                // Remove the item completely
+                const hotbar = this.inventorySystem.getHotbar();
+                const selectedIndex = this.inventorySystem.getSelectedHotbarIndex();
+                hotbar[selectedIndex].item = null;
+              }
+              this.inventoryUI.updateHotbar();
+            }
+          }
+        }
+      }
     }
     
     // Handle mouse click for tool usage
-    if (this.input.isMouseButtonPressed(0) && this.hoveredTile && !this.shop.isShopOpen()) {
-      // Use tool at mouse position
-      const worldX = this.hoveredTile.x * tileSize + tileSize/2;
-      const worldY = this.hoveredTile.y * tileSize + tileSize/2;
-      this.player.interactAt(worldX, worldY, this.tileMap, this.itemDropManager, this.audioSystem);
+    if (this.input.isMouseButtonPressed(0) && this.hoveredTile && !this.shop.isShopOpen() && !this.inventorySystem.isInventoryOpen()) {
+      const selectedItem = this.inventorySystem.getSelectedHotbarItem();
+      if (selectedItem && ((selectedItem.type === 'tool' || selectedItem.type === 'seed') && selectedItem.toolType)) {
+        // Use tool at mouse position
+        const worldX = this.hoveredTile.x * tileSize + tileSize/2;
+        const worldY = this.hoveredTile.y * tileSize + tileSize/2;
+        this.player.interactAt(worldX, worldY, this.tileMap, this.itemDropManager, this.audioSystem, selectedItem.toolType);
+        
+        // Consume seed if it was planted
+        if (selectedItem.type === 'seed' && selectedItem.toolType === 'seeds') {
+          const tileX = Math.floor(worldX / 32);
+          const tileY = Math.floor(worldY / 32);
+          const tile = this.tileMap.getTileAt(tileX, tileY);
+          
+          if (tile && tile.planted) {
+            // Seed was planted, remove one from inventory
+            if (selectedItem.quantity > 1) {
+              selectedItem.quantity--;
+            } else {
+              // Remove the item completely
+              const hotbar = this.inventorySystem.getHotbar();
+              const selectedIndex = this.inventorySystem.getSelectedHotbarIndex();
+              hotbar[selectedIndex].item = null;
+            }
+            this.inventoryUI.updateHotbar();
+          }
+        }
+      }
     }
     
     // Check for item pickups
-    this.player.collectItems(this.itemDropManager, this.audioSystem);
+    this.player.collectItems(this.itemDropManager, this.audioSystem, this.inventorySystem);
     
     // Handle shop interaction
     const nearShop = this.shopkeeper.isNearPlayer(this.player.getPosition());
@@ -819,38 +925,37 @@ export class Game {
       // Buy seeds with 1
       if (this.input.isKeyPressed('Digit1')) {
         if (this.player.spendMoney(10)) {
-          this.player.getInventory().addSeeds(5);
+          this.inventorySystem.addItem({
+            id: 'carrot_seeds',
+            name: 'Carrot Seeds',
+            icon: '🥕',
+            quantity: 5,
+            stackable: true,
+            type: 'seed',
+            toolType: 'seeds'
+          });
           console.log('Bought 5 seeds for 10 coins!');
           this.audioSystem.playSound('purchase', 0.6);
         }
       }
       // Sell carrots with 2
       if (this.input.isKeyPressed('Digit2')) {
-        const carrots = this.player.getHarvestedCrops().get('carrot') || 0;
-        if (carrots > 0) {
-          this.player.getHarvestedCrops().set('carrot', carrots - 1);
+        if (this.inventorySystem.removeItem('carrot', 1)) {
           this.player.addMoney(15);
           console.log('Sold 1 carrot for 15 coins!');
           this.audioSystem.playSound('coin', 0.5);
         }
       }
       // Skip tool selection while shop is open
-    } else {
+    } else if (!this.inventorySystem.isInventoryOpen()) {
     
-    // Handle tool selection
-    const inventory = this.player.getInventory();
-    if (this.input.isKeyPressed('Digit1')) inventory.selectTool(0);
-    if (this.input.isKeyPressed('Digit2')) inventory.selectTool(1);
-    if (this.input.isKeyPressed('Digit3')) inventory.selectTool(2);
-    if (this.input.isKeyPressed('Digit4')) inventory.selectTool(3);
-    if (this.input.isKeyPressed('Digit5')) inventory.selectTool(4);
-    
-    // Scroll wheel for tool selection
-    if (this.input.isKeyPressed('KeyQ')) {
-      inventory.selectPreviousTool();
-    }
-    if (this.input.isKeyPressed('KeyR')) {
-      inventory.selectNextTool();
+    // Handle hotbar selection (only if inventory is closed)
+    for (let i = 1; i <= 6; i++) {
+      if (this.input.isKeyPressed(`Digit${i}`)) {
+        this.inventorySystem.selectHotbarSlot(i - 1);
+        this.inventoryUI.updateHotbar();
+        break; // Only process one key per frame
+      }
     }
     } // End of else block (shop not open)
     
@@ -881,65 +986,26 @@ export class Game {
       posElement.textContent = `${Math.floor(uiPlayerPos.x)}, ${Math.floor(uiPlayerPos.y)}`;
     }
     
-    // Update inventory display
+    // Hide old inventory display
     const inventorySlotsElement = document.getElementById('inventorySlots');
-    const inventory = this.player.getInventory();
-    
-    if (inventorySlotsElement && inventorySlotsElement.children.length === 0) {
-      // Only create elements once
-      inventory.getTools().forEach((tool, index) => {
-        const slot = document.createElement('div');
-        slot.className = 'inventory-slot';
-        slot.setAttribute('data-index', index.toString());
-        
-        slot.innerHTML = `
-          <span class="icon">${tool.icon}</span>
-          <span class="quantity"></span>
-          <span class="name">${tool.name}</span>
-        `;
-        
-        slot.addEventListener('click', () => {
-          inventory.selectTool(index);
-        });
-        
-        inventorySlotsElement.appendChild(slot);
-      });
+    if (inventorySlotsElement) {
+      inventorySlotsElement.style.display = 'none';
     }
     
-    // Update slot states
-    const slots = inventorySlotsElement?.querySelectorAll('.inventory-slot');
-    slots?.forEach((slot, index) => {
-      const tool = inventory.getTools()[index];
-      const isSelected = index === inventory.getSelectedIndex();
-      
-      if (isSelected) {
-        slot.classList.add('selected');
-      } else {
-        slot.classList.remove('selected');
-      }
-      
-      const quantityEl = slot.querySelector('.quantity');
-      if (quantityEl) {
-        quantityEl.textContent = tool.quantity !== undefined ? tool.quantity.toString() : '';
-      }
-    });
-    
-    // Update crop count and money
+    // Update money display
     const cropCountElement = document.getElementById('cropCount');
     if (cropCountElement) {
-      const crops = this.player.getHarvestedCrops();
-      let cropText = 'Inventory: ';
-      crops.forEach((count, crop) => {
-        cropText += `${crop}: ${count} `;
-      });
-      cropText += ` | Money: ${this.player.getMoney()} coins`;
+      let statusText = `Money: ${this.player.getMoney()} coins`;
       
       // Show shop prompt if near
       if (this.shopkeeper.isNearPlayer(this.player.getPosition())) {
-        cropText += ' | Press F to open shop';
+        statusText += ' | Press F to open shop';
       }
       
-      cropCountElement.textContent = cropText;
+      // Show inventory hint
+      statusText += ' | Press E for inventory';
+      
+      cropCountElement.textContent = statusText;
     }
     
     // Show shop UI if open
@@ -971,7 +1037,7 @@ export class Game {
         document.body.appendChild(shopElement);
       }
       
-      const carrots = this.player.getHarvestedCrops().get('carrot') || 0;
+      const carrots = this.inventorySystem.getItemCount('carrot');
       const portrait = this.generateShopkeeperPortrait();
       
       shopElement.innerHTML = `
@@ -1039,30 +1105,32 @@ export class Game {
     const worldY = this.hoveredTile.y * tileSize;
     
     // Get the current tool to determine highlight color
-    const tool = this.player.getInventory().getSelectedTool();
+    const selectedItem = this.inventorySystem.getSelectedHotbarItem();
     let r = 1, g = 1, b = 1, a = 0.3;
     
-    switch (tool.type) {
-      case ToolType.Hoe:
-        // Brown for tilling
-        r = 0.6; g = 0.4; b = 0.2;
-        break;
-      case ToolType.Seeds:
-        // Green for planting
-        r = 0.2; g = 0.8; b = 0.2;
-        break;
-      case ToolType.WateringCan:
-        // Blue for watering
-        r = 0.2; g = 0.4; b = 0.8;
-        break;
-      case ToolType.Scythe:
-        // Gold for harvesting
-        r = 0.8; g = 0.7; b = 0.2;
-        break;
-      case ToolType.Axe:
-        // Orange-red for chopping
-        r = 0.9; g = 0.4; b = 0.1;
-        break;
+    if (selectedItem && selectedItem.type === 'tool' && selectedItem.toolType) {
+      switch (selectedItem.toolType) {
+        case 'hoe':
+          // Brown for tilling
+          r = 0.6; g = 0.4; b = 0.2;
+          break;
+        case 'seeds':
+          // Green for planting
+          r = 0.2; g = 0.8; b = 0.2;
+          break;
+        case 'wateringCan':
+          // Blue for watering
+          r = 0.2; g = 0.4; b = 0.8;
+          break;
+        case 'scythe':
+          // Gold for harvesting
+          r = 0.8; g = 0.7; b = 0.2;
+          break;
+        case 'axe':
+          // Orange-red for chopping
+          r = 0.9; g = 0.4; b = 0.1;
+          break;
+      }
     }
     
     // Draw highlight outline
@@ -1160,7 +1228,8 @@ export class Game {
             texture = tile.watered ? this.textures.get('wateredDirt')! : this.textures.get('tilledDirt')!;
             break;
           case TileType.Tree:
-            texture = this.textures.get('tree')!;
+            // Render grass underneath the tree first
+            texture = this.textures.get('grass')!;
             break;
         }
         
@@ -1183,6 +1252,14 @@ export class Game {
             }
             
             plantTexture.bind(0);
+            this.spriteBatch.drawTexturedQuad(worldX + tileSize/2, worldY + tileSize/2, tileSize, tileSize);
+          }
+          
+          // Draw tree on top of grass
+          if (tile.type === TileType.Tree) {
+            this.spriteBatch.flush();
+            const treeTexture = this.textures.get('tree')!;
+            treeTexture.bind(0);
             this.spriteBatch.drawTexturedQuad(worldX + tileSize/2, worldY + tileSize/2, tileSize, tileSize);
           }
         }
@@ -1268,11 +1345,23 @@ export class Game {
     const pos = this.player.getPosition();
     const size = this.player.getSize();
     const facing = this.player.getFacing();
-    const tool = this.player.getInventory().getSelectedTool();
+    const selectedItem = this.inventorySystem.getSelectedHotbarItem();
     const animProgress = this.player.getToolAnimationProgress();
     
+    // Map tool type from inventory system
+    let toolType = undefined;
+    if (selectedItem && selectedItem.type === 'tool' && selectedItem.toolType) {
+      // Map string tool types to ToolType enum
+      switch (selectedItem.toolType) {
+        case 'hoe': toolType = ToolType.Hoe; break;
+        case 'axe': toolType = ToolType.Axe; break;
+        case 'wateringCan': toolType = ToolType.WateringCan; break;
+        case 'scythe': toolType = ToolType.Scythe; break;
+      }
+    }
+    
     // Generate player texture with current state
-    const playerTexture = this.generatePlayerTexture(facing, tool.type, animProgress);
+    const playerTexture = this.generatePlayerTexture(facing, toolType, animProgress);
     
     this.spriteBatch.flush();
     playerTexture.bind(0);

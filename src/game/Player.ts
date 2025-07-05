@@ -1,5 +1,5 @@
 import { Vec2 } from '../utils/math';
-import { TileMap } from './TileMap';
+import { TileMap, TileType } from './TileMap';
 import { Inventory, ToolType } from './Inventory';
 import { ItemDropManager } from './ItemDrop';
 import { AudioSystem } from '../engine/AudioSystem';
@@ -16,6 +16,7 @@ export class Player {
   private toolUseTime: number = 0;
   private toolUseDuration: number = 0.3; // 300ms animation
   private money: number = 100; // Starting money
+  private sprintMultiplier: number = 1.75; // Sprint speed multiplier
   
   constructor(x: number, y: number) {
     this.position = new Vec2(x, y);
@@ -26,7 +27,7 @@ export class Player {
     this.inventory = new Inventory();
   }
   
-  public update(deltaTime: number, movement: Vec2, tileMap: TileMap): void {
+  public update(deltaTime: number, movement: Vec2, tileMap: TileMap, isSprinting: boolean = false): void {
     // Update tool animation
     if (this.isUsingTool) {
       this.toolUseTime += deltaTime;
@@ -36,8 +37,11 @@ export class Player {
       }
     }
     
-    // Update velocity based on input (slower when using tool)
-    const speedMultiplier = this.isUsingTool ? 0.5 : 1.0;
+    // Update velocity based on input (slower when using tool, faster when sprinting)
+    let speedMultiplier = this.isUsingTool ? 0.5 : 1.0;
+    if (isSprinting && !this.isUsingTool) {
+      speedMultiplier *= this.sprintMultiplier;
+    }
     this.velocity = movement.multiply(this.speed * speedMultiplier);
     
     // Update facing direction
@@ -90,7 +94,7 @@ export class Player {
     return false;
   }
   
-  public interact(tileMap: TileMap, itemDropManager: ItemDropManager, audioSystem?: AudioSystem): void {
+  public interact(tileMap: TileMap, itemDropManager: ItemDropManager, audioSystem?: AudioSystem, toolTypeOverride?: string): void {
     // Don't allow tool use while animating
     if (this.isUsingTool) return;
     
@@ -118,16 +122,18 @@ export class Player {
         break;
     }
     
-    const tool = this.inventory.getSelectedTool();
+    const toolType = toolTypeOverride || this.inventory.getSelectedTool().type;
     
-    switch (tool.type) {
+    switch (toolType) {
       case ToolType.Hoe:
+      case 'hoe':
         if (tileMap.tillTile(targetX, targetY)) {
           audioSystem?.playSound('hoe', 0.5);
         }
         break;
         
       case ToolType.Seeds:
+      case 'seeds':
         const canPlant = tileMap.plantSeed(targetX, targetY);
         if (canPlant) {
           if (!this.inventory.consumeSeed()) {
@@ -147,12 +153,14 @@ export class Player {
         break;
         
       case ToolType.WateringCan:
+      case 'wateringCan':
         if (tileMap.waterTile(targetX, targetY)) {
           audioSystem?.playSound('watering', 0.4);
         }
         break;
         
       case ToolType.Scythe:
+      case 'scythe':
         const crop = tileMap.harvestCrop(targetX, targetY);
         if (crop) {
           audioSystem?.playSound('scythe', 0.5);
@@ -164,6 +172,7 @@ export class Player {
         break;
         
       case ToolType.Axe:
+      case 'axe':
         const treeChopped = tileMap.chopTree(targetX, targetY);
         audioSystem?.playSound('axe', 0.6);
         if (treeChopped) {
@@ -175,7 +184,7 @@ export class Player {
     }
   }
   
-  public interactAt(worldX: number, worldY: number, tileMap: TileMap, itemDropManager: ItemDropManager, audioSystem?: AudioSystem): void {
+  public interactAt(worldX: number, worldY: number, tileMap: TileMap, itemDropManager: ItemDropManager, audioSystem?: AudioSystem, toolTypeOverride?: string): void {
     // Don't allow tool use while animating
     if (this.isUsingTool) return;
     
@@ -183,9 +192,9 @@ export class Player {
     this.isUsingTool = true;
     this.toolUseTime = 0;
     
-    const tool = this.inventory.getSelectedTool();
+    const toolType = toolTypeOverride || this.inventory.getSelectedTool().type;
     
-    switch (tool.type) {
+    switch (toolType) {
       case ToolType.Hoe:
         if (tileMap.tillTile(worldX, worldY)) {
           audioSystem?.playSound('hoe', 0.5);
@@ -193,6 +202,7 @@ export class Player {
         break;
         
       case ToolType.Seeds:
+      case 'seeds':
         const canPlant = tileMap.plantSeed(worldX, worldY);
         if (canPlant) {
           if (!this.inventory.consumeSeed()) {
@@ -212,12 +222,14 @@ export class Player {
         break;
         
       case ToolType.WateringCan:
+      case 'wateringCan':
         if (tileMap.waterTile(worldX, worldY)) {
           audioSystem?.playSound('watering', 0.4);
         }
         break;
         
       case ToolType.Scythe:
+      case 'scythe':
         const crop = tileMap.harvestCrop(worldX, worldY);
         if (crop) {
           audioSystem?.playSound('scythe', 0.5);
@@ -229,6 +241,7 @@ export class Player {
         break;
         
       case ToolType.Axe:
+      case 'axe':
         const treeChopped = tileMap.chopTree(worldX, worldY);
         audioSystem?.playSound('axe', 0.6);
         if (treeChopped) {
@@ -268,22 +281,66 @@ export class Player {
     return this.isUsingTool ? this.toolUseTime / this.toolUseDuration : 0;
   }
   
-  public collectItems(itemDropManager: ItemDropManager, audioSystem?: AudioSystem): void {
+  public collectItems(itemDropManager: ItemDropManager, audioSystem?: AudioSystem, inventorySystem?: any): void {
     const pickedUp = itemDropManager.checkPickup(this.position.x, this.position.y);
     
     pickedUp.forEach(drop => {
-      if (drop.itemType === 'seeds') {
-        this.inventory.addSeeds(drop.quantity);
-        console.log(`Picked up ${drop.quantity} seeds!`);
+      let added = false;
+      
+      if (inventorySystem) {
+        // Create inventory item based on drop type
+        let item = null;
+        
+        if (drop.itemType === 'seeds') {
+          item = {
+            id: 'carrot_seeds',
+            name: 'Carrot Seeds',
+            icon: '🥕',
+            quantity: drop.quantity,
+            stackable: true,
+            type: 'seed' as const,
+            toolType: 'seeds'
+          };
+        } else if (drop.itemType === 'carrot') {
+          item = {
+            id: 'carrot',
+            name: 'Carrot',
+            icon: '🥕',
+            quantity: drop.quantity,
+            stackable: true,
+            type: 'crop' as const
+          };
+        } else if (drop.itemType === 'wood') {
+          item = {
+            id: 'wood',
+            name: 'Wood',
+            icon: '🪵',
+            quantity: drop.quantity,
+            stackable: true,
+            type: 'resource' as const
+          };
+        }
+        
+        if (item) {
+          added = inventorySystem.addItem(item);
+        }
       } else {
-        // It's a crop or resource
-        const currentCount = this.harvestedCrops.get(drop.itemType) || 0;
-        this.harvestedCrops.set(drop.itemType, currentCount + drop.quantity);
-        console.log(`Picked up ${drop.quantity} ${drop.itemType}!`);
+        // Fallback to old system
+        if (drop.itemType === 'seeds') {
+          this.inventory.addSeeds(drop.quantity);
+          added = true;
+        } else {
+          const currentCount = this.harvestedCrops.get(drop.itemType) || 0;
+          this.harvestedCrops.set(drop.itemType, currentCount + drop.quantity);
+          added = true;
+        }
       }
       
-      // Play pickup sound
-      audioSystem?.playSound('pickup', 0.4);
+      if (added) {
+        console.log(`Picked up ${drop.quantity} ${drop.itemType}!`);
+        // Play pickup sound
+        audioSystem?.playSound('pickup', 0.4);
+      }
     });
   }
   
