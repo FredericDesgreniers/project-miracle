@@ -4,7 +4,7 @@ export interface InventoryItem {
   icon: string;
   quantity: number;
   stackable: boolean;
-  type: 'tool' | 'resource' | 'seed' | 'crop';
+  type: 'tool' | 'resource' | 'seed' | 'crop' | 'material';
   toolType?: string; // For tools
 }
 

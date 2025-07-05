@@ -4,7 +4,7 @@ export interface NPCConfig {
   id: string;
   name: string;
   position: Vec2;
-  type: 'shopkeeper' | 'villager';
+  type: 'shopkeeper' | 'villager' | 'blacksmith';
   dialogue?: string[];
 }
 

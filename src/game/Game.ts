@@ -182,7 +182,7 @@ export class Game {
     this.actionSystem.registerInteractable('shopkeeper', interactableShopkeeper);
     
     // Register blacksmith as interactable
-    const interactableBlacksmith = new InteractableNPC(this.blacksmithNPC, this, null, this.blacksmith);
+    const interactableBlacksmith = new InteractableNPC(this.blacksmithNPC, this, undefined, this.blacksmith);
     this.actionSystem.registerInteractable('blacksmith', interactableBlacksmith);
     
     this.setupEventListeners();
@@ -215,7 +215,7 @@ export class Game {
     console.log('Shop sell button clicked!');
     const carrotCount = this.inventorySystem.getItemCount('carrot');
     if (carrotCount > 0) {
-      this.inventorySystem.removeItemById('carrot', 1);
+      this.inventorySystem.removeItem('carrot', 1);
       this.player.addMoney(15);
       this.inventoryUI.updateHotbar();
       this.updateShopUI();
@@ -227,7 +227,7 @@ export class Game {
     console.log('Blacksmith sell wood clicked!');
     const woodCount = this.inventorySystem.getItemCount('wood');
     if (woodCount > 0) {
-      this.inventorySystem.removeItemById('wood', 1);
+      this.inventorySystem.removeItem('wood', 1);
       this.player.addMoney(5);
       this.inventoryUI.updateHotbar();
       this.updateBlacksmithUI();
@@ -455,11 +455,11 @@ export class Game {
     // Load blacksmith texture from image
     try {
       console.log('Loading blacksmith texture from image...');
-      const blacksmithTexture = await Texture.load(gl, '/src/images/blacksmith-1.png');
+      const blacksmithTexture = await Texture.load(gl, '/src/images/blacksmithguy-1.png');
       this.textures.set('blacksmith', blacksmithTexture);
       console.log('Blacksmith texture loaded successfully');
     } catch (error) {
-      console.error('Failed to load blacksmith-1.png, using procedural texture:', error);
+      console.error('Failed to load blacksmithguy-1.png, using procedural texture:', error);
       const blacksmithTex = this.generateBlacksmithTexture();
       this.textures.set('blacksmith', blacksmithTex);
     }
@@ -474,6 +474,9 @@ export class Game {
       console.error('Failed to load shop-1.png, using procedural texture:', error);
       this.textures.set('shop_stall', this.generateShopStallTexture());
     }
+    
+    // Generate forge texture (no image available)
+    this.textures.set('forge', this.generateForgeTexture());
   }
   
   private generatePlayerTexture(facing: string = 'down', toolType?: ToolType, animProgress: number = 0): Texture {
@@ -1115,6 +1118,50 @@ export class Game {
     return Texture.fromImageData(gl, imageData);
   }
   
+  private generateForgeTexture(): Texture {
+    const gl = this.renderer.getGL();
+    const size = 64;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+    
+    // Forge base (stone)
+    ctx.fillStyle = '#4a4a4a';
+    ctx.fillRect(0, 24, 64, 40);
+    
+    // Forge opening (with fire glow)
+    ctx.fillStyle = '#ff4500';
+    ctx.fillRect(20, 32, 24, 20);
+    
+    // Inner fire
+    ctx.fillStyle = '#ff6347';
+    ctx.fillRect(24, 36, 16, 12);
+    ctx.fillStyle = '#ffd700';
+    ctx.fillRect(28, 40, 8, 6);
+    
+    // Anvil (on top)
+    ctx.fillStyle = '#2f2f2f';
+    ctx.fillRect(8, 20, 20, 4);
+    ctx.fillRect(12, 16, 12, 4);
+    
+    // Chimney
+    ctx.fillStyle = '#3a3a3a';
+    ctx.fillRect(48, 0, 12, 30);
+    
+    // Smoke
+    ctx.fillStyle = 'rgba(128, 128, 128, 0.6)';
+    ctx.beginPath();
+    ctx.arc(54, 0, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(54, -5, 6, 0, Math.PI * 2);
+    ctx.fill();
+    
+    const imageData = ctx.getImageData(0, 0, size, size);
+    return Texture.fromImageData(gl, imageData);
+  }
+  
   public start(): void {
     console.log('Starting game with loaded textures...');
     this.lastTime = performance.now();
@@ -1427,6 +1474,57 @@ export class Game {
         }
       }
       // Skip tool selection while shop is open
+    } else if (this.blacksmith.isBlacksmithOpen()) {
+      // Handle blacksmith transactions
+      // Sell wood with 1
+      if (this.input.isKeyPressed('Digit1')) {
+        const woodCount = this.inventorySystem.getItemCount('wood');
+        if (woodCount > 0) {
+          this.inventorySystem.removeItem('wood', 1);
+          this.player.addMoney(5);
+          console.log('Sold 1 wood for 5 coins!');
+          this.audioSystem.playSound('coin', 0.4);
+          this.inventoryUI.updateHotbar();
+          this.updateBlacksmithUI();
+        }
+      }
+      // Buy iron ingot with 2
+      if (this.input.isKeyPressed('Digit2')) {
+        if (this.player.getMoney() >= 25) {
+          this.player.spendMoney(25);
+          this.inventorySystem.addItem({
+            id: 'iron_ingot',
+            name: 'Iron Ingot',
+            icon: '⚙️',
+            quantity: 1,
+            stackable: true,
+            type: 'material'
+          });
+          console.log('Bought 1 iron ingot for 25 coins!');
+          this.audioSystem.playSound('purchase', 0.5);
+          this.inventoryUI.updateHotbar();
+          this.updateBlacksmithUI();
+        }
+      }
+      // Buy gold ingot with 3
+      if (this.input.isKeyPressed('Digit3')) {
+        if (this.player.getMoney() >= 100) {
+          this.player.spendMoney(100);
+          this.inventorySystem.addItem({
+            id: 'gold_ingot',
+            name: 'Gold Ingot',
+            icon: '🟨',
+            quantity: 1,
+            stackable: true,
+            type: 'material'
+          });
+          console.log('Bought 1 gold ingot for 100 coins!');
+          this.audioSystem.playSound('purchase', 0.6);
+          this.inventoryUI.updateHotbar();
+          this.updateBlacksmithUI();
+        }
+      }
+      // Skip tool selection while blacksmith is open
     } else if (!this.inventorySystem.isInventoryOpen()) {
     
     // Handle hotbar selection (only if inventory is closed)
@@ -1640,7 +1738,7 @@ export class Game {
         blacksmithElement.innerHTML = `
           <div style="display: flex; gap: 30px; align-items: flex-start;">
             <div>
-              <img src="/src/images/blacksmith-1.png" style="width: 256px; height: 256px; image-rendering: pixelated; border: 3px solid #8B4513; border-radius: 8px; object-fit: cover;">
+              <img src="/src/images/blacksmithguy-1.png" style="width: 256px; height: 256px; image-rendering: pixelated; border: 3px solid #8B4513; border-radius: 8px; object-fit: cover;">
               <p style="margin-top: 10px; font-style: italic;">"Need some fine metalwork?"</p>
             </div>
             <div class="blacksmith-content" style="min-width: 300px;">
@@ -2092,6 +2190,7 @@ export class Game {
   }
   
   private renderShop(): void {
+    // Render shop stall
     const shopPos = this.shopkeeper.position;
     const stallTexture = this.textures.get('shop_stall');
     
@@ -2099,7 +2198,18 @@ export class Game {
       this.spriteBatch.flush();
       stallTexture.bind(0);
       this.spriteBatch.drawTexturedQuad(shopPos.x, shopPos.y - 16, 64, 64);
-      this.spriteBatch.flush(); // Ensure we flush after drawing stall
+      this.spriteBatch.flush();
+    }
+    
+    // Render blacksmith forge
+    const blacksmithPos = this.blacksmithNPC.position;
+    const forgeTexture = this.textures.get('forge');
+    
+    if (forgeTexture) {
+      this.spriteBatch.flush();
+      forgeTexture.bind(0);
+      this.spriteBatch.drawTexturedQuad(blacksmithPos.x, blacksmithPos.y - 16, 64, 48);
+      this.spriteBatch.flush();
     }
   }
   
