@@ -22,7 +22,7 @@ export class Texture {
     return texture;
   }
   
-  public static async load(gl: WebGL2RenderingContext, url: string): Promise<Texture> {
+  public static async load(gl: WebGL2RenderingContext, url: string, wrapMode: number = gl.CLAMP_TO_EDGE): Promise<Texture> {
     return new Promise((resolve, reject) => {
       const image = new Image();
       image.onload = () => {
@@ -38,8 +38,8 @@ export class Texture {
           image
         );
         
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrapMode);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrapMode);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
         

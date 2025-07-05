@@ -155,6 +155,10 @@ export class InventoryUI {
       padding: 20px;
       z-index: 1000;
       box-shadow: 0 0 20px rgba(0, 0, 0, 0.8);
+      width: 360px;
+      display: flex;
+      flex-direction: column;
+      min-height: 480px;
     `;
     
     // Add keyboard event listener for hotbar assignment
@@ -175,9 +179,12 @@ export class InventoryUI {
     const gridContainer = document.createElement('div');
     gridContainer.style.cssText = `
       display: grid;
-      grid-template-columns: repeat(6, 1fr);
+      grid-template-columns: repeat(6, 50px);
       gap: 4px;
-      margin-bottom: 20px;
+      margin-bottom: 30px;
+      width: fit-content;
+      justify-self: center;
+      align-self: center;
     `;
     
     // Create grid slots

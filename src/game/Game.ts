@@ -171,10 +171,38 @@ export class Game {
       this.textures.set('grass', Texture.generateGrassTile(gl));
     }
     
-    // Generate other tile textures (keep procedural for now)
-    this.textures.set('dirt', Texture.generateDirtTile(gl));
-    this.textures.set('stone', Texture.generateStoneTile(gl));
-    this.textures.set('water', Texture.generateWaterTile(gl));
+    // Load dirt texture from image
+    try {
+      console.log('Loading dirt texture from image...');
+      const dirtTexture = await Texture.load(gl, '/src/images/dirt-1.png');
+      this.textures.set('dirt', dirtTexture);
+      console.log('Dirt texture loaded successfully');
+    } catch (error) {
+      console.error('Failed to load dirt-1.png, using procedural texture:', error);
+      this.textures.set('dirt', Texture.generateDirtTile(gl));
+    }
+    
+    // Load stone texture from image
+    try {
+      console.log('Loading stone texture from image...');
+      const stoneTexture = await Texture.load(gl, '/src/images/stone-1.png');
+      this.textures.set('stone', stoneTexture);
+      console.log('Stone texture loaded successfully');
+    } catch (error) {
+      console.error('Failed to load stone-1.png, using procedural texture:', error);
+      this.textures.set('stone', Texture.generateStoneTile(gl));
+    }
+    
+    // Load water texture from image
+    try {
+      console.log('Loading water texture from image...');
+      const waterTexture = await Texture.load(gl, '/src/images/water-1.png');
+      this.textures.set('water', waterTexture);
+      console.log('Water texture loaded successfully');
+    } catch (error) {
+      console.error('Failed to load water-1.png, using procedural texture:', error);
+      this.textures.set('water', Texture.generateWaterTile(gl));
+    }
     
     // Note: Player texture is generated dynamically during render
     
@@ -192,17 +220,48 @@ export class Game {
     // Generate item drop textures
     this.textures.set('item_carrot', this.generateCarrotItemTexture());
     this.textures.set('item_seeds', this.generateSeedItemTexture());
-    this.textures.set('item_wood', this.generateWoodItemTexture());
     
-    // Load tree texture from image
+    // Load wood/log texture from image
     try {
-      console.log('Loading tree texture from image...');
-      const treeTexture = await Texture.load(gl, '/src/images/tree.png');
-      this.textures.set('tree', treeTexture);
-      console.log('Tree texture loaded successfully');
+      console.log('Loading wood texture from image...');
+      const woodTexture = await Texture.load(gl, '/src/images/log-1.png');
+      this.textures.set('item_wood', woodTexture);
+      console.log('Wood texture loaded successfully');
     } catch (error) {
-      console.error('Failed to load tree.png, using procedural texture:', error);
+      console.error('Failed to load log-1.png, using procedural texture:', error);
+      this.textures.set('item_wood', this.generateWoodItemTexture());
+    }
+    
+    // Load tree textures from images
+    const treePromises = [];
+    for (let i = 1; i <= 4; i++) {
+      treePromises.push(
+        Texture.load(gl, `/src/images/tree-${i}.png`)
+          .then(texture => {
+            this.textures.set(`tree-${i}`, texture);
+            console.log(`Tree texture ${i} loaded successfully`);
+          })
+          .catch(error => {
+            console.error(`Failed to load tree-${i}.png:`, error);
+          })
+      );
+    }
+    await Promise.all(treePromises);
+    
+    // If no tree textures loaded, use procedural as fallback
+    if (!this.textures.has('tree-1')) {
+      console.log('No tree textures loaded, using procedural texture');
       this.textures.set('tree', this.generateTreeTexture());
+    }
+    
+    // Load character sprite sheet
+    try {
+      console.log('Loading character sprite sheet...');
+      const characterTexture = await Texture.load(gl, '/src/images/character.png');
+      this.textures.set('character', characterTexture);
+      console.log('Character sprite sheet loaded successfully');
+    } catch (error) {
+      console.error('Failed to load character.png:', error);
     }
     
     // Generate NPC textures
@@ -1337,17 +1396,66 @@ export class Game {
     const cameraPos = this.camera.getPosition();
     const zoom = this.camera.getZoom();
     
-    // Calculate visible tile range
-    const startX = Math.max(0, Math.floor((cameraPos.x - this.canvas.width / (2 * zoom)) / tileSize));
-    const endX = Math.min(this.tileMap.getWidth(), Math.ceil((cameraPos.x + this.canvas.width / (2 * zoom)) / tileSize));
-    const startY = Math.max(0, Math.floor((cameraPos.y - this.canvas.height / (2 * zoom)) / tileSize));
-    const endY = Math.min(this.tileMap.getHeight(), Math.ceil((cameraPos.y + this.canvas.height / (2 * zoom)) / tileSize));
+    // Calculate visible tile range with extra margin for water
+    const margin = 1; // Extra tile margin
+    const startX = Math.max(0, Math.floor((cameraPos.x - this.canvas.width / (2 * zoom)) / tileSize) - margin);
+    const endX = Math.min(this.tileMap.getWidth(), Math.ceil((cameraPos.x + this.canvas.width / (2 * zoom)) / tileSize) + margin);
+    const startY = Math.max(0, Math.floor((cameraPos.y - this.canvas.height / (2 * zoom)) / tileSize) - margin);
+    const endY = Math.min(this.tileMap.getHeight(), Math.ceil((cameraPos.y + this.canvas.height / (2 * zoom)) / tileSize) + margin);
     
-    // Render visible tiles
+    // First pass: Render all water tiles with larger size
+    const waterTexture = this.textures.get('water');
+    if (waterTexture) {
+      this.spriteBatch.flush();
+      waterTexture.bind(0);
+      
+      for (let y = startY; y < endY; y++) {
+        for (let x = startX; x < endX; x++) {
+          const tile = this.tileMap.getTileAt(x, y);
+          if (tile && tile.type === TileType.Water) {
+            const worldX = x * tileSize;
+            const worldY = y * tileSize;
+            // Render water 3 pixels larger for better coverage
+            this.spriteBatch.drawTexturedQuad(
+              worldX + tileSize/2, 
+              worldY + tileSize/2, 
+              tileSize + 3, 
+              tileSize + 3
+            );
+          }
+        }
+      }
+    }
+    
+    // Also render dirt tiles with slight overlap to prevent seams
+    const dirtTexture = this.textures.get('dirt');
+    if (dirtTexture) {
+      this.spriteBatch.flush();
+      dirtTexture.bind(0);
+      
+      for (let y = startY; y < endY; y++) {
+        for (let x = startX; x < endX; x++) {
+          const tile = this.tileMap.getTileAt(x, y);
+          if (tile && tile.type === TileType.Dirt) {
+            const worldX = x * tileSize;
+            const worldY = y * tileSize;
+            // Render dirt 2 pixels larger to prevent seams
+            this.spriteBatch.drawTexturedQuad(
+              worldX + tileSize/2, 
+              worldY + tileSize/2, 
+              tileSize + 2, 
+              tileSize + 2
+            );
+          }
+        }
+      }
+    }
+    
+    // Second pass: Render all other tiles
     for (let y = startY; y < endY; y++) {
       for (let x = startX; x < endX; x++) {
         const tile = this.tileMap.getTileAt(x, y);
-        if (!tile) continue;
+        if (!tile || tile.type === TileType.Water || tile.type === TileType.Dirt) continue;
         
         const worldX = x * tileSize;
         const worldY = y * tileSize;
@@ -1404,21 +1512,104 @@ export class Game {
           // Draw tree on top of grass
           if (tile.type === TileType.Tree) {
             this.spriteBatch.flush();
-            const treeTexture = this.textures.get('tree')!;
-            treeTexture.bind(0);
-            // Make trees 1.5x larger and offset slightly up
-            const treeSize = tileSize * 1.5;
-            const treeOffsetY = -tileSize * 0.2; // Offset up by 20% of tile size
+            
+            // Get the tree variant texture
+            let treeTexture: Texture | undefined;
+            if (tile.treeVariant && tile.treeVariant >= 1 && tile.treeVariant <= 4) {
+              treeTexture = this.textures.get(`tree-${tile.treeVariant}`);
+            }
+            
+            // Fallback to procedural tree if variant texture not found
+            if (!treeTexture) {
+              treeTexture = this.textures.get('tree');
+            }
+            
+            if (treeTexture) {
+              treeTexture.bind(0);
+              // Make trees 1.5x larger and offset slightly up
+              const treeSize = tileSize * 1.5;
+              const treeOffsetY = -tileSize * 0.2; // Offset up by 20% of tile size
+              this.spriteBatch.drawTexturedQuad(
+                worldX + tileSize/2, 
+                worldY + tileSize/2 + treeOffsetY, 
+                treeSize, 
+                treeSize
+              );
+            }
+          }
+        }
+      }
+    }
+    
+    // Third pass: Render shoreline/edge effects
+    this.renderShoreline(startX, endX, startY, endY);
+  }
+  
+  private renderShoreline(startX: number, endX: number, startY: number, endY: number): void {
+    const tileSize = this.tileMap.getTileSize();
+    const shader = this.spriteBatch.getSpriteShader();
+    
+    // Generate a simple brown texture for shoreline
+    if (!this.textures.has('shoreline')) {
+      const shorelineTexture = Texture.createSolid(this.renderer.getGL(), 1, 1, 102, 76, 38); // Brown color
+      this.textures.set('shoreline', shorelineTexture);
+    }
+    
+    const shorelineTexture = this.textures.get('shoreline');
+    if (!shorelineTexture) return;
+    
+    this.spriteBatch.flush();
+    shorelineTexture.bind(0);
+    
+    for (let y = startY; y < endY; y++) {
+      for (let x = startX; x < endX; x++) {
+        const tile = this.tileMap.getTileAt(x, y);
+        if (!tile || tile.type === TileType.Water) continue;
+        
+        // Check if this is a grass/dirt tile next to water
+        if (tile.type === TileType.Grass || tile.type === TileType.Dirt) {
+          const worldX = x * tileSize;
+          const worldY = y * tileSize;
+          
+          // Check adjacent tiles for water
+          const leftWater = x > 0 && this.tileMap.getTileAt(x - 1, y)?.type === TileType.Water;
+          const rightWater = x < this.tileMap.getWidth() - 1 && this.tileMap.getTileAt(x + 1, y)?.type === TileType.Water;
+          const topWater = y > 0 && this.tileMap.getTileAt(x, y - 1)?.type === TileType.Water;
+          const bottomWater = y < this.tileMap.getHeight() - 1 && this.tileMap.getTileAt(x, y + 1)?.type === TileType.Water;
+          
+          const edgeWidth = 3; // Width of the edge effect
+          
+          // Draw edge lines where land meets water
+          if (leftWater) {
             this.spriteBatch.drawTexturedQuad(
-              worldX + tileSize/2, 
-              worldY + tileSize/2 + treeOffsetY, 
-              treeSize, 
-              treeSize
+              worldX + edgeWidth/2, worldY + tileSize/2,
+              edgeWidth, tileSize
+            );
+          }
+          if (rightWater) {
+            this.spriteBatch.drawTexturedQuad(
+              worldX + tileSize - edgeWidth/2, worldY + tileSize/2,
+              edgeWidth, tileSize
+            );
+          }
+          if (topWater) {
+            this.spriteBatch.drawTexturedQuad(
+              worldX + tileSize/2, worldY + edgeWidth/2,
+              tileSize, edgeWidth
+            );
+          }
+          if (bottomWater) {
+            this.spriteBatch.drawTexturedQuad(
+              worldX + tileSize/2, worldY + tileSize - edgeWidth/2,
+              tileSize, edgeWidth
             );
           }
         }
       }
     }
+    
+    // Flush the batch to ensure shoreline is rendered
+    this.spriteBatch.flush();
   }
   
   private renderItemDrops(): void {
@@ -1494,32 +1685,84 @@ export class Game {
     const selectedItem = this.inventorySystem.getSelectedHotbarItem();
     const animProgress = this.player.getToolAnimationProgress();
     
-    // Map tool type from inventory system
-    let toolType = undefined;
-    if (selectedItem && selectedItem.toolType) {
-      // Map string tool types to ToolType enum
-      switch (selectedItem.toolType) {
-        case 'hoe': toolType = ToolType.Hoe; break;
-        case 'axe': toolType = ToolType.Axe; break;
-        case 'wateringCan': toolType = ToolType.WateringCan; break;
-        case 'scythe': toolType = ToolType.Scythe; break;
-        case 'seeds': toolType = ToolType.Seeds; break;
+    // Try to use character sprite sheet
+    const characterTexture = this.textures.get('character');
+    if (characterTexture) {
+      // Character sprite sheet is 4x4 grid
+      const framesPerRow = 4;
+      const totalRows = 4;
+      const frameWidth = characterTexture.getWidth() / framesPerRow;
+      const frameHeight = characterTexture.getHeight() / totalRows;
+      
+      // Determine row based on facing direction
+      let row = 0;
+      switch (facing) {
+        case 'down': row = 0; break;
+        case 'right': row = 1; break;
+        case 'left': row = 3; break;   // Swapped with up
+        case 'up': row = 2; break;     // Swapped with left
       }
+      
+      // Determine column based on animation state
+      let col = 0;
+      if (this.player.isPlayerMoving()) {
+        // Walking animation uses columns 1-3
+        const animTime = this.player.getAnimationTime();
+        const frameTime = 0.2; // 200ms per frame
+        const walkFrames = 3;
+        col = 1 + Math.floor(animTime / frameTime) % walkFrames;
+      } else {
+        // Idle animation uses column 0
+        col = 0;
+      }
+      
+      // Calculate UV coordinates
+      const u0 = col / framesPerRow;
+      const v0 = row / totalRows;
+      const u1 = (col + 1) / framesPerRow;
+      const v1 = (row + 1) / totalRows;
+      
+      this.spriteBatch.flush();
+      characterTexture.bind(0);
+      
+      // Render character with better proportions and slight offset
+      const renderWidth = 48;  // 1.5x the sprite size
+      const renderHeight = 48;
+      const yOffset = -8; // Slight upward offset to align feet with tile
+      
+      this.spriteBatch.drawTexturedQuad(
+        pos.x, pos.y + yOffset,
+        renderWidth, renderHeight,
+        u0, v0, u1, v1
+      );
+    } else {
+      // Fallback to procedural texture if sprite sheet not loaded
+      let toolType = undefined;
+      if (selectedItem && selectedItem.toolType) {
+        // Map string tool types to ToolType enum
+        switch (selectedItem.toolType) {
+          case 'hoe': toolType = ToolType.Hoe; break;
+          case 'axe': toolType = ToolType.Axe; break;
+          case 'wateringCan': toolType = ToolType.WateringCan; break;
+          case 'scythe': toolType = ToolType.Scythe; break;
+          case 'seeds': toolType = ToolType.Seeds; break;
+        }
+      }
+      
+      // Generate player texture with current state
+      const playerTexture = this.generatePlayerTexture(facing, toolType, animProgress);
+      
+      this.spriteBatch.flush();
+      playerTexture.bind(0);
+      this.spriteBatch.drawTexturedQuad(pos.x, pos.y, size.x * 1.2, size.y * 1.2); // Slightly larger to show tools
     }
-    
-    // Generate player texture with current state
-    const playerTexture = this.generatePlayerTexture(facing, toolType, animProgress);
-    
-    this.spriteBatch.flush();
-    playerTexture.bind(0);
-    this.spriteBatch.drawTexturedQuad(pos.x, pos.y, size.x * 1.2, size.y * 1.2); // Slightly larger to show tools
     
     // Render tool use progress if animating
     if (this.player.isAnimatingTool()) {
       const progress = this.player.getToolAnimationProgress();
       this.renderProgressBar(
         pos.x,
-        pos.y - size.y - 8,
+        pos.y - 32, // Adjusted for larger character sprite
         20,
         3,
         progress,

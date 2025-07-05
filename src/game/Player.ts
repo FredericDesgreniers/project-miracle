@@ -17,6 +17,8 @@ export class Player {
   private toolUseDuration: number = 0.3; // 300ms animation
   private money: number = 100; // Starting money
   private sprintMultiplier: number = 1.75; // Sprint speed multiplier
+  private animationTime: number = 0;
+  private isMoving: boolean = false;
   
   constructor(x: number, y: number) {
     this.position = new Vec2(x, y);
@@ -35,6 +37,14 @@ export class Player {
         this.isUsingTool = false;
         this.toolUseTime = 0;
       }
+    }
+    
+    // Update movement animation
+    this.isMoving = movement.length() > 0;
+    if (this.isMoving) {
+      this.animationTime += deltaTime;
+    } else {
+      this.animationTime = 0; // Reset to idle
     }
     
     // Update velocity based on input (slower when using tool, faster when sprinting)
@@ -332,5 +342,13 @@ export class Player {
       return true;
     }
     return false;
+  }
+  
+  public getAnimationTime(): number {
+    return this.animationTime;
+  }
+  
+  public isPlayerMoving(): boolean {
+    return this.isMoving;
   }
 }

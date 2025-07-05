@@ -19,6 +19,7 @@ export interface Tile {
   lastWatered?: number;
   cropType?: string;
   treeHealth?: number;
+  treeVariant?: number; // 1-4 for different tree textures
 }
 
 export class TileMap {
@@ -142,6 +143,7 @@ export class TileMap {
             type: TileType.Tree,
             solid: true,
             treeHealth: 3, // Takes 3 hits to chop down
+            treeVariant: Math.floor(Math.random() * 4) + 1, // Random variant 1-4
           };
         }
       }
