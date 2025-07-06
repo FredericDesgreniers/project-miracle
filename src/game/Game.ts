@@ -400,6 +400,7 @@ export class Game {
     // Generate item drop textures
     this.textures.set('item_carrot', this.generateCarrotItemTexture());
     this.textures.set('item_seeds', this.generateSeedItemTexture());
+    this.textures.set('item_tree_seeds', this.generateTreeSeedItemTexture());
     
     // Load wood/log texture from image
     try {
@@ -816,6 +817,46 @@ export class Game {
     return Texture.fromImageData(gl, imageData);
   }
   
+  private generateTreeSeedItemTexture(): Texture {
+    const gl = this.renderer.getGL();
+    const size = 16;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+    
+    // Acorn shape (make it larger and brighter)
+    ctx.fillStyle = '#D2691E';  // Brighter brown
+    ctx.beginPath();
+    ctx.arc(8, 10, 5, 0, Math.PI * 2);  // Larger radius
+    ctx.fill();
+    
+    // Acorn cap
+    ctx.fillStyle = '#8B4513';
+    ctx.fillRect(3, 4, 10, 5);  // Larger cap
+    
+    // Cap texture
+    ctx.strokeStyle = '#654321';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(4, 6);
+    ctx.lineTo(12, 6);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(4, 8);
+    ctx.lineTo(12, 8);
+    ctx.stroke();
+    
+    // Add a highlight to make it more visible
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.beginPath();
+    ctx.arc(6, 9, 2, 0, Math.PI * 2);
+    ctx.fill();
+    
+    const imageData = ctx.getImageData(0, 0, size, size);
+    return Texture.fromImageData(gl, imageData);
+  }
+  
   private generateTreeTexture(): Texture {
     const gl = this.renderer.getGL();
     const size = 48; // Larger texture size
@@ -1130,6 +1171,43 @@ export class Game {
     return Texture.fromImageData(gl, imageData);
   }
   
+  private generateStumpTexture(): Texture {
+    const gl = this.renderer.getGL();
+    const size = 32;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+    
+    // Clear to transparent
+    ctx.clearRect(0, 0, size, size);
+    
+    // Tree stump
+    ctx.fillStyle = '#8B4513';
+    ctx.beginPath();
+    ctx.arc(16, 16, 10, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Inner rings
+    ctx.strokeStyle = '#654321';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(16, 16, 8, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(16, 16, 5, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    // Center
+    ctx.fillStyle = '#4a3018';
+    ctx.beginPath();
+    ctx.arc(16, 16, 2, 0, Math.PI * 2);
+    ctx.fill();
+    
+    const imageData = ctx.getImageData(0, 0, size, size);
+    return Texture.fromImageData(gl, imageData);
+  }
+  
   private generateForgeTexture(): Texture {
     const gl = this.renderer.getGL();
     const size = 64;
@@ -1291,6 +1369,9 @@ export class Game {
           case TileType.Tree:
             if (selectedItem.toolType === 'axe') showAction = true;
             break;
+          case TileType.TreeStump:
+            if (selectedItem.toolType === 'axe') showAction = true;
+            break;
         }
         
         if (showAction) {
@@ -1376,7 +1457,7 @@ export class Game {
           this.player.interact(this.tileMap, this.itemDropManager, this.audioSystem, selectedItem.toolType);
           
           // Consume seed if it was planted
-          if (selectedItem.type === 'seed' && selectedItem.toolType === 'seeds') {
+          if (selectedItem.type === 'seed' && (selectedItem.toolType === 'seeds' || selectedItem.toolType === 'treeSeeds')) {
             // Check if planting was successful by checking the tile
             const playerPos = this.player.getPosition();
             const facing = this.player.getFacing();
@@ -1393,9 +1474,24 @@ export class Game {
             
             const tileX = Math.floor(targetX / 32);
             const tileY = Math.floor(targetY / 32);
-            const tile = this.tileMap.getTileAt(tileX, tileY);
+            const tileBeforePlanting = this.tileMap.getTileAt(tileX, tileY);
+            const wasGrass = tileBeforePlanting?.type === TileType.Grass;
+            const wasTilledNotPlanted = tileBeforePlanting?.type === TileType.TilledDirt && !tileBeforePlanting.planted;
             
-            if (tile && tile.planted) {
+            // Re-fetch tile after planting attempt
+            const tileAfterPlanting = this.tileMap.getTileAt(tileX, tileY);
+            
+            // Check if planting was successful
+            let checkSuccess = false;
+            if (selectedItem.toolType === 'seeds') {
+              // For carrot seeds: check if tile went from tilled (not planted) to planted
+              checkSuccess = wasTilledNotPlanted && tileAfterPlanting?.planted === true;
+            } else if (selectedItem.toolType === 'treeSeeds') {
+              // For tree seeds: check if tile went from grass to tree stump
+              checkSuccess = wasGrass && tileAfterPlanting?.type === TileType.TreeStump;
+            }
+            
+            if (checkSuccess) {
               // Seed was planted, remove one from inventory
               if (selectedItem.quantity > 1) {
                 selectedItem.quantity--;
@@ -1419,15 +1515,32 @@ export class Game {
         // Use tool at mouse position
         const worldX = this.hoveredTile.x * tileSize + tileSize/2;
         const worldY = this.hoveredTile.y * tileSize + tileSize/2;
-        this.player.interactAt(worldX, worldY, this.tileMap, this.itemDropManager, this.audioSystem, selectedItem.toolType);
         
         // Consume seed if it was planted
-        if (selectedItem.type === 'seed' && selectedItem.toolType === 'seeds') {
+        if (selectedItem.type === 'seed' && (selectedItem.toolType === 'seeds' || selectedItem.toolType === 'treeSeeds')) {
           const tileX = Math.floor(worldX / 32);
           const tileY = Math.floor(worldY / 32);
-          const tile = this.tileMap.getTileAt(tileX, tileY);
+          const tileBeforePlanting = this.tileMap.getTileAt(tileX, tileY);
+          const wasGrass = tileBeforePlanting?.type === TileType.Grass;
+          const wasTilledNotPlanted = tileBeforePlanting?.type === TileType.TilledDirt && !tileBeforePlanting.planted;
           
-          if (tile && tile.planted) {
+          // Use tool
+          this.player.interactAt(worldX, worldY, this.tileMap, this.itemDropManager, this.audioSystem, selectedItem.toolType);
+          
+          // Re-fetch tile after planting attempt
+          const tileAfterPlanting = this.tileMap.getTileAt(tileX, tileY);
+          
+          // Check if planting was successful
+          let checkSuccess = false;
+          if (selectedItem.toolType === 'seeds') {
+            // For carrot seeds: check if tile went from tilled (not planted) to planted
+            checkSuccess = wasTilledNotPlanted && tileAfterPlanting?.planted === true;
+          } else if (selectedItem.toolType === 'treeSeeds') {
+            // For tree seeds: check if tile went from grass to tree stump
+            checkSuccess = wasGrass && tileAfterPlanting?.type === TileType.TreeStump;
+          }
+          
+          if (checkSuccess) {
             // Seed was planted, remove one from inventory
             if (selectedItem.quantity > 1) {
               selectedItem.quantity--;
@@ -1439,6 +1552,9 @@ export class Game {
             }
             this.inventoryUI.updateHotbar();
           }
+        } else {
+          // For non-seed tools, just use them
+          this.player.interactAt(worldX, worldY, this.tileMap, this.itemDropManager, this.audioSystem, selectedItem.toolType);
         }
       }
     }
@@ -2036,6 +2152,10 @@ export class Game {
             // Render grass underneath the tree first
             texture = this.textures.get('grass')!;
             break;
+          case TileType.TreeStump:
+            // Render grass underneath the stump
+            texture = this.textures.get('grass')!;
+            break;
         }
         
         if (texture) {
@@ -2087,6 +2207,24 @@ export class Game {
                 treeSize
               );
             }
+          } else if (tile.type === TileType.TreeStump) {
+            // Render tree stump
+            this.spriteBatch.flush();
+            
+            // Generate or get stump texture
+            let stumpTexture = this.textures.get('stump');
+            if (!stumpTexture) {
+              stumpTexture = this.generateStumpTexture();
+              this.textures.set('stump', stumpTexture);
+            }
+            
+            stumpTexture.bind(0);
+            this.spriteBatch.drawTexturedQuad(
+              worldX + tileSize/2,
+              worldY + tileSize/2,
+              tileSize * 0.8,
+              tileSize * 0.8
+            );
           }
         }
       }
@@ -2175,6 +2313,8 @@ export class Game {
         texture = this.textures.get('item_carrot') || null;
       } else if (drop.itemType === 'wood') {
         texture = this.textures.get('item_wood') || null;
+      } else if (drop.itemType === 'tree_seeds') {
+        texture = this.textures.get('item_tree_seeds') || null;
       }
       
       if (texture) {

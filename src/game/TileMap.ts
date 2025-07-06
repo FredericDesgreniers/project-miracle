@@ -6,6 +6,7 @@ export enum TileType {
   TilledDirt = 4,
   PlantedDirt = 5,
   Tree = 6,
+  TreeStump = 7,
 }
 
 export interface Tile {
@@ -20,6 +21,8 @@ export interface Tile {
   cropType?: string;
   treeHealth?: number;
   treeVariant?: number; // 1-4 for different tree textures
+  stumpTime?: number; // Time when tree was chopped
+  originalTreeVariant?: number; // Remember which tree variant to regrow
 }
 
 export class TileMap {
@@ -199,17 +202,31 @@ export class TileMap {
     const tileY = Math.floor(y / this.tileSize);
     const tile = this.getTileAt(tileX, tileY);
     
-    if (tile && tile.type === TileType.TilledDirt && !tile.planted) {
-      this.tiles[tileY][tileX] = {
-        type: TileType.PlantedDirt,
-        solid: false,
-        tilled: true,
-        planted: true,
-        growth: 0,
-        watered: false,
-        cropType: cropType
-      };
-      return true;
+    if (cropType === 'tree') {
+      // Plant tree seeds on grass
+      if (tile && tile.type === TileType.Grass) {
+        this.tiles[tileY][tileX] = {
+          type: TileType.TreeStump,
+          solid: false,
+          stumpTime: Date.now() - 15000, // Start at 15 seconds so it grows in 5 seconds
+          originalTreeVariant: Math.floor(Math.random() * 4) + 1
+        };
+        return true;
+      }
+    } else {
+      // Plant regular seeds on tilled dirt
+      if (tile && tile.type === TileType.TilledDirt && !tile.planted) {
+        this.tiles[tileY][tileX] = {
+          type: TileType.PlantedDirt,
+          solid: false,
+          tilled: true,
+          planted: true,
+          growth: 0,
+          watered: false,
+          cropType: cropType
+        };
+        return true;
+      }
     }
     
     return false;
@@ -249,7 +266,7 @@ export class TileMap {
     return null;
   }
   
-  public chopTree(x: number, y: number): boolean {
+  public chopTree(x: number, y: number): boolean | 'stump' {
     const tileX = Math.floor(x / this.tileSize);
     const tileY = Math.floor(y / this.tileSize);
     const tile = this.getTileAt(tileX, tileY);
@@ -260,13 +277,23 @@ export class TileMap {
         tile.treeHealth--;
         return false; // Tree not yet chopped down
       } else {
-        // Tree is chopped down, convert to grass
+        // Tree is chopped down, convert to stump
+        const treeVariant = tile.treeVariant || 1;
         this.tiles[tileY][tileX] = {
-          type: TileType.Grass,
+          type: TileType.TreeStump,
           solid: false,
+          stumpTime: Date.now(),
+          originalTreeVariant: treeVariant
         };
         return true; // Tree was chopped down
       }
+    } else if (tile && tile.type === TileType.TreeStump) {
+      // Chop the stump, convert to grass
+      this.tiles[tileY][tileX] = {
+        type: TileType.Grass,
+        solid: false
+      };
+      return 'stump'; // Stump was removed
     }
     
     return false;
@@ -295,6 +322,16 @@ export class TileMap {
             this.tiles[y][x] = {
               type: TileType.Grass,
               solid: false,
+            };
+          }
+        } else if (tile.type === TileType.TreeStump && tile.stumpTime) {
+          // Regrow trees after 20 seconds
+          if (currentTime - tile.stumpTime > 20000) {
+            this.tiles[y][x] = {
+              type: TileType.Tree,
+              solid: true,
+              treeHealth: 3,
+              treeVariant: tile.originalTreeVariant || Math.floor(Math.random() * 4) + 1
             };
           }
         }

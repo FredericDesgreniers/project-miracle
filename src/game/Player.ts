@@ -204,6 +204,12 @@ export class Player {
           audioSystem?.playSound('plant', 0.4);
         }
         break;
+      
+      case 'treeSeeds':
+        if (tileMap.plantSeed(worldX, worldY, 'tree')) {
+          audioSystem?.playSound('plant', 0.4);
+        }
+        break;
         
       case ToolType.WateringCan:
       case 'wateringCan':
@@ -228,10 +234,15 @@ export class Player {
       case 'axe':
         const treeChopped = tileMap.chopTree(worldX, worldY);
         audioSystem?.playSound('axe', 0.6);
-        if (treeChopped) {
+        if (treeChopped === true) {
           // Drop wood when tree is fully chopped
           itemDropManager.createDrop(worldX, worldY, 'wood', 3);
           itemDropManager.createDrop(worldX - 10, worldY + 10, 'wood', 2);
+          // Drop tree seeds
+          itemDropManager.createDrop(worldX + 15, worldY, 'tree_seeds', 1);
+        } else if (treeChopped === 'stump') {
+          // Drop wood when stump is removed
+          itemDropManager.createDrop(worldX, worldY, 'wood', 1);
         }
         break;
     }
@@ -302,6 +313,16 @@ export class Player {
             quantity: drop.quantity,
             stackable: true,
             type: 'resource' as const
+          };
+        } else if (drop.itemType === 'tree_seeds') {
+          item = {
+            id: 'tree_seeds',
+            name: 'Tree Seeds',
+            icon: '🌰',
+            quantity: drop.quantity,
+            stackable: true,
+            type: 'seed' as const,
+            toolType: 'treeSeeds'
           };
         }
         
